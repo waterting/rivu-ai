@@ -1,6 +1,6 @@
 """Add PIM, billing, channels, and custom solutions tables.
 
-Revision ID: 0007_ecommerce_intelligence_platform
+Revision ID: 0007_ecommerce_platform
 Revises: 0006_google_oauth
 Create Date: 2026-11-15 00:25:00
 """
@@ -9,13 +9,32 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy import inspect
 
-revision = "0007_ecommerce_intelligence_platform"
+revision = "0007_ecommerce_platform"
 down_revision = "0006_google_oauth"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
+    # Widen alembic_version.version_num from Alembic's default VARCHAR(32) so
+    # longer revision identifiers cannot break the version stamp. Idempotent:
+    # only widens if the column is narrower than 255.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'alembic_version'
+                  AND column_name = 'version_num'
+                  AND character_maximum_length < 255
+            ) THEN
+                ALTER TABLE alembic_version
+                    ALTER COLUMN version_num TYPE VARCHAR(255);
+            END IF;
+        END $$;
+        """
+    )
     if context.is_offline_mode():
         # Subscription Plans
         op.create_table(
