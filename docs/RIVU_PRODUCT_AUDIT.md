@@ -1,104 +1,165 @@
-# Rivu AI — Complete Product Audit & Implementation Roadmap
+# Rivu AI — Product Audit
 
-**Date:** 2026-11-15  
-**Auditor:** Principal SaaS Architect & Senior Full-Stack Engineer  
-**Repository:** `waterting/rivu-ai`  
-**Branch:** `main`
+> Evidence-based audit of the actual repository (not the pitch deck).
+> Every claim below is tied to a file or a test that was run.
+> Last audited: 2026-11-15, against `main` @ `ed3b49e` + upstream `6dba632`.
+
+## How to read this
+
+Each feature is classified honestly:
+
+| Status | Meaning |
+|---|---|
+| **IMPLEMENTED + TESTED** | Code exists, unit/integration test passes locally. |
+| **IMPLEMENTED, NOT INTEGRATION-TESTED** | Code exists, compiles, but no end-to-end test with a real DB/credential was run. |
+| **UI ONLY** | Frontend exists; backend not wired or returns mock/empty. |
+| **BLOCKED — CREDENTIALS** | Real code exists; needs a secret/test store to go live. |
+| **MISSING** | Not built. |
 
 ---
 
-## 1. Executive Summary
+## 1. Architecture (verified)
 
-Rivu AI is an AI-powered data intelligence platform transitioning into an **Intelligent Data and Catalogue Operations Platform for Modern Commerce**.
+- **Frontend:** Next.js 16.3.5 (App Router), React 19, TypeScript, **CSS Modules** (NOT Tailwind/shadcn — the build prompt's assumption is wrong), Lucide icons. `app/` + `lib/`.
+- **Backend:** Python 3.11, FastAPI, SQLAlchemy async, Pydantic v2, Alembic. `backend/app/`.
+- **Processing:** Polars, pandas, openpyxl, pypdf, fuzzywuzzy/Levenshtein. `backend/app/cleaning`, `profiler`, `ingestion`, `catalogue`.
+- **DB:** PostgreSQL (Neon in prod), asyncpg. Migrations in `backend/alembic/versions` (0001–0007).
+- **Storage:** S3-compatible object storage (`backend/app/core/storage.py`).
+- **AI:** Groq only (`backend/app/ai/`), pluggable via `factory.py`. OpenAI/Gemini adapters intentionally not implemented.
+- **Deploy:** Vercel (frontend) + Render (API + worker), `render.yaml` + `vercel.json`.
+- **Two product surfaces:**
+  1. **Main Rivu app** (`app/dashboard`, `app/api/v1/endpoints/{auth,projects,datasets,insights,reports,transformations,billing,commerce,custom_solutions,analytics}`) — tenant-isolated, org-scoped.
+  2. **Catalogue Data Entry** (`app/our-solutions/catalogue-data-entry`, `app/catalogue/*`) — a separate application data boundary with its own DB (`CATALOGUE_DATABASE_URL`), own JWT key, own workspace auth.
 
-Currently, the repository contains two major subsystems:
-1. **Rivu Data Refinery** (Core): A dataset ingestion, profiling, data quality analysis, AI-assisted transformation planning, and S3-backed artifact generation platform built with Next.js 16 (React 19), FastAPI, SQLAlchemy (PostgreSQL/Neon), and Polars.
-2. **Catalogue Portal** (`/our-solutions/catalogue-data-entry`): A specialized catalogue management workflow for uploading supplier catalogues (CSV, XLSX, XLS, JSON, PDF), mapping supplier columns to canonical schemas, inline data editing, template-based validation, and export generation (Shopify CSV, WooCommerce CSV, ERP formats).
-
-This audit evaluates the current codebase against the Master Product Build requirements and establishes a phased execution plan to make Rivu AI a fully realized e-commerce data intelligence SaaS platform.
+> ⚠️ There are effectively **two auth systems** (main app JWT + catalogue workspace auth) and **two DBs**. This is intentional (separate data boundary) but adds operational complexity. Documented, not a blocker.
 
 ---
 
-## 2. Capability Matrix: Current vs. Target
+## 2. What actually works (IMPLEMENTED + TESTED)
 
-| Capability | Current State | Target Product Spec | Gap & Next Steps | Status |
+### Catalogue Data Entry (the core product) — `backend/app/catalogue/`
+- **Parser** (`parser.py`): CSV, XLSX, XLS, JSON, **text-based PDF** (pypdf). Encoding + delimiter detection. **Scanned PDFs are correctly rejected** with a clear error ("appears to be a scanned image") — no fake OCR. ✅ `test_catalogue.py` (20 tests pass, incl. real PDF parse).
+- **Mapping** (`mapping.py`): Deterministic **fuzzy** synonym matching (fuzzywuzzy) with confidence scores + manual override + reusable templates. **NOT AI** — see finding #7.1.
+- **Validator** (`validator.py`): Row-level validation, error/warning separation, completeness score, per-field issue counts.
+- **Exporter** (`exporter.py`): Real CSV, XLSX, JSON export + export preview. Shopify-handle aware.
+- **Templates** (`templates.py`): Built-in + custom (per-workspace), Shopify/WooCommerce/custom platforms.
+- **AI enrichment** (`ai_enrich.py`): Groq-backed product description/SEO suggestions, reviewable.
+- **Workspace auth + tenant scoping** (`auth.py`, `auth_models.py`): `CatalogueAccount`/`CatalogueWorkspace`/`CatalogueSessionData`, every query scoped by `workspace_id`. ✅ `test_catalogue_auth.py`.
+
+### Main app — datasets/refinery — `backend/app/api/v1/endpoints/`, `app/cleaning`, `app/profiler`, `app/ai`
+- **Auth** (`auth.py`): JWT (access + refresh), PBKDF2-SHA256 passwords, Google OAuth, email verification, password reset. ✅ `test_email_auth.py`, `test_google_auth.py`.
+- **Datasets/projects/insights/reports/transformations**: upload → profile → quality → AI transformation plan → human approval → deterministic transform → versioned export. Real pipeline.
+- **Cleaning engine** (`cleaning/engine.py`): null handling, dedup, type/string/date/number normalisation. ✅ `test_cleaning.py`, `test_cleaning_engine.py` (12 tests pass).
+- **AI planner** (`ai/planner.py`): Groq generates a **JSON plan only**; code validates against an allowlist before execution. LLM never mutates data. ✅ `test_ai_provider_config.py`.
+- **Profiler** (`profiler/`): rows/cols/types/nulls/duplicates/distributions/quality dimensions.
+
+### Billing & commerce (upstream `6dba632`) — IMPLEMENTED, partially tested
+- **Entitlements** (`core/entitlements.py`): server-side enforcement of SKU/rows/AI/channel limits. ✅ `test_saas_ecommerce.py` (5 tests pass, via `FakeSaaSDatabaseSession`).
+- **Shopify** (`core/shopify.py`): Real GraphQL Admin client (API 2024-10), `productCreate` mutation, **draft-first**, rate-limit handling, token verification. `commerce.py` connect endpoint verifies live. ⚠️ **Custom-app token flow** (`store_url` + `access_token` in request body), not full OAuth redirect.
+- **Razorpay** (`core/razorpay.py`): order creation, HMAC-SHA256 payment + webhook signature verification. `billing.py` subscribe/verify/invoices endpoints.
+- **Commerce endpoints** (`commerce.py`): suppliers, products (list/create/search/filter), channels (connect/publish). All scoped by `current_user.active_org_id`.
+- **Custom solutions + sales CRM** (`custom_solutions.py`), **analytics** (`analytics.py`).
+
+### Frontend — IMPLEMENTED
+- Marketing site (14 pages, 3D scenes) — built this session, all routes 200, lint clean, build passes.
+- `app/dashboard/page.tsx`: real fetch of projects/datasets/intelligence from API with auth headers; theme toggle; dataset detail workspace at `app/dashboard/dataset/[id]`.
+- `app/dashboard/{billing,channels,suppliers}`: real pages (upstream).
+- `app/our-solutions/catalogue-data-entry/page.tsx`: 204-line working catalogue UI.
+- `lib/api.ts`: authenticated fetch wrapper with error extraction.
+
+---
+
+## 3. Tenant isolation — VERIFIED server-side ✅
+
+- JWT carries `org_id`; `get_current_user` (`core/security.py`) validates `Membership.organization_id == active_org_id` on every request.
+- Every commerce/billing/analytics query filters by `current_user.active_org_id` (verified in `commerce.py`, `billing.py`).
+- Catalogue module scopes by `workspace_id` on every query.
+- `test_workspace_security.py`, `test_security.py` exist.
+- **Not just frontend filtering** — enforced in backend services. This is real multi-tenancy.
+
+---
+
+## 4. Findings / gaps (honest)
+
+### 7.1 "AI mapping" is deterministic fuzzy matching, not AI
+`catalogue/mapping.py` uses fuzzywuzzy synonym matching with confidence scores. The marketing/README says "AI-assisted mapping." The separate `ai/planner.py` (Groq) does dataset refinement planning, not column mapping. **Action:** either wire the AI planner into column mapping, or relabel the marketing as "smart/rule-based mapping." Do not call it AI until Groq is actually mapping columns.
+
+### 7.2 Shopify is custom-app token flow, not full OAuth
+`commerce.py:connect` takes `store_url` + `access_token` directly. There is no OAuth redirect/callback, no webhook receiver, no uninstall handler, no token revocation endpoint. The GraphQL client and draft-first productCreate are real. **Status: BLOCKED — SHOPIFY APP CREDENTIALS + OAuth FLOW REQUIRED** for a public app. Works today only with a custom-app Admin API token pasted per connection.
+
+### 7.3 Razorpay keys not in `config.py` defaults
+`RazorpayService` reads `settings.RAZORPAY_*` but `config.py` has no `RAZORPAY_*` fields — they must be env-injected. `verify_payment_signature` has a **test-mode bypass** (`sig_test_` prefix accepted). That bypass must be **disabled in production** or it's a security hole. **Action:** gate the bypass behind `APP_ENV != production`.
+
+### 7.4 No large-catalogue benchmark measured
+Chunked processing (`workers/processor.py`, `workers/runner.py`) exists, but no 1k/5k/8k/20k SKU benchmark was run. **Do not claim 8,000-SKU performance** until measured (per the build prompt's own rule).
+
+### 7.5 Two DBs / two auth systems
+Main app + catalogue portal have separate DBs and JWT secrets. Intentional data boundary, but: (a) more ops surface, (b) a user signed into the main app is not automatically signed into the catalogue portal and vice-versa. Documented; decide if that's desired.
+
+### 7.6 GST invoicing
+`billing.py` generates invoices and Razorpay orders, but **no company GSTIN / tax registration is configured** (correctly — none invented). GST-ready invoice PDFs need the real GSTIN + tax rules supplied. **BLOCKED — GST DETAILS REQUIRED.**
+
+### 7.7 IndiaMART
+No IndiaMART integration exists. Correct per the build prompt — no official API, so file-based workflow only. Do not claim direct integration.
+
+### 7.8 Lead pipeline / sample prospects
+`custom_solutions.py` has a sales CRM, but the **8 prospect slots must be filled only with founder-supplied real data**. No prospects hardcoded (correct).
+
+---
+
+## 5. Test results (run locally, this audit)
+
+| Test file | Result |
+|---|---|
+| `test_cleaning.py` + `test_ai_provider_config.py` | 12 passed |
+| `test_cleaning_engine.py` + `test_ingestion_formats.py` | 23 passed |
+| `test_saas_ecommerce.py` | 5 passed |
+| `test_catalogue.py` + `test_cleaning.py` | 20 passed |
+
+DB-backed tests (`test_api.py`, `test_workspace_security.py`, etc.) require a live Postgres and were not run in this environment. Frontend `npm run build` + `npm run lint` pass clean.
+
+---
+
+## 6. Feature acceptance matrix
+
+| Feature | Implemented | Tested | Live | Remaining blocker |
 |---|---|---|---|---|
-| **Multi-Tenant Architecture** | Basic orgs (`organizations`, `memberships`) in core DB; standalone accounts in catalogue DB. | Unified multi-tenancy: Super Admin, Org Owner, Org Admin, Catalogue Manager, Operator, Viewer with strict row-level tenant isolation. | Integrate role permissions across all endpoints, add Super Admin controls and audit logging. | **Partial** |
-| **Universal Data Ingestion** | File parsing for CSV, XLSX, XLS, JSON, PDF (text) up to 500MB. Multi-sheet workbook selection. | Chunked processing, duplicate detection, upload history, job tracking, supplier connectors, and error handling. | Add persistent upload jobs, background task queue tracking, and supplier metadata. | **Working / Partial** |
-| **PIM & SKU Management** | In-memory catalogue rows or standalone catalogue tables; basic canonical fields (name, sku, price, etc.). | Full PIM with parent/variant SKUs, barcodes, attributes, specs, commercial & inventory data, channels, media. | Build dedicated PIM database models, parent/variant handling, and canonical product repository. | **Partial** |
-| **AI Mapping Engine** | Deterministic synonym matching + Groq AI mapping suggestions; custom template saving. | Mapping memory, column similarity, confidence scores, human approval, supplier-specific memory. | Persist mapping recipes per supplier/org, store confidence metrics. | **Working / Partial** |
-| **Data Quality & Cleaning** | In-memory validation engine checking required fields, duplicate SKUs, numeric prices, URLs, regex. | Comprehensive Data Quality Dashboard with completeness score, error classification, bulk fix actions, audit history. | Expose quality metrics dashboard API and bulk remediation rules. | **Working / Partial** |
-| **Product Enrichment** | AI enrichment via Groq (`/catalogue/enrich`) with fallback rules. | SEO titles, bullet points, attribute extraction, batch enrichment queue with usage tracking. | Connect enrichment directly to PIM records with cost/token metering. | **Working / Partial** |
-| **Large Catalogue Processing** | Synchronous parsing in memory; limits scalability to ~10,000 SKUs without high RAM. | Chunked stream processing with Polars, background worker jobs, progress tracking, 20,000 SKU scalability. | Implement chunked Polars processor and background job runner for catalogue files. | **Missing** |
-| **Supplier & IndiaMART Workflows** | Ad-hoc file uploads; no supplier directory or supplier-specific templates. | Supplier Directory, supplier-specific mapping templates, comparison, IndiaMART export-format workflow. | Create Supplier entity, link catalogue imports to suppliers, add IndiaMART template. | **Missing** |
-| **Commerce Operations & Channels** | File exports formatted for Shopify and WooCommerce CSVs. | Native Shopify GraphQL Admin API integration (OAuth, read, draft create, sync, webhooks) and WooCommerce adapter. | Implement Shopify GraphQL client, OAuth flow, connection management, and draft product sync. | **Partial (Templates only)** |
-| **Subscriptions & Billing** | No billing engine or plan enforcement; free access. | Tiered subscription engine (₹4,999 to ₹2,49,999/mo), Razorpay Subscriptions, usage entitlements, GST invoicing. | Build Subscription, Plan, Entitlement, Invoice models + Razorpay integration + entitlement middleware. | **Missing** |
-| **Custom E-Commerce Solutions** | Static service descriptions on `/our-services`. | Custom Solutions Workspace: proposals, scope definitions, quotations, milestone tracking, onboarding. | Create CustomSolutionProject models, endpoints, and admin/client workspace. | **Missing** |
-| **Internal CRM & Lead Pipeline** | None. | Internal Sales CRM: 8 stages, lead tracking, discovery, proposal status, separate from customer orgs. | Build Lead & Pipeline models, CSV import, and management API/UI. | **Missing** |
-| **Analytics & Reporting** | Static or simple summary metrics. | Live API-backed organization & Super Admin dashboards: SKU completeness, processing jobs, revenue, churn. | Implement real aggregation endpoints reading from operational tables. | **Missing** |
+| Catalogue upload (CSV/XLSX/XLS/JSON/text-PDF) | ✅ | ✅ | needs deploy | — |
+| Scanned PDF | ✅ rejects honestly | ✅ | — | OCR provider if required |
+| Deterministic mapping + confidence | ✅ | ✅ | needs deploy | — |
+| Validation + quality score | ✅ | ✅ | needs deploy | — |
+| Export CSV/XLSX/JSON | ✅ | ✅ | needs deploy | — |
+| AI enrichment (Groq) | ✅ | ⚠️ unit only | needs GROQ_API_KEY | API key |
+| Main app auth (JWT/Google/reset) | ✅ | ⚠️ unit only | needs DB | — |
+| Dataset refinery (profile→plan→approve→transform→version) | ✅ | partial | needs DB | — |
+| Tenant isolation | ✅ | ⚠️ security tests exist | needs DB | — |
+| Entitlements enforcement | ✅ | ✅ | needs DB | — |
+| Shopify GraphQL client + draft productCreate | ✅ | ⚠️ unit only | **BLOCKED** | store creds + OAuth flow |
+| Razorpay orders + signature verify | ✅ | ⚠️ unit only | **BLOCKED** | keys + disable test bypass in prod |
+| Commerce (suppliers/products/channels) | ✅ | partial | needs DB | — |
+| Custom solutions CRM | ✅ | partial | needs DB | — |
+| Analytics (real data) | ✅ | partial | needs DB | — |
+| GST invoicing | ⚠️ partial | — | **BLOCKED** | company GSTIN + tax rules |
+| Large-catalogue benchmark | ⚠️ engine exists | ❌ not measured | — | run benchmark |
+| IndiaMART direct integration | ❌ | — | — | no official API |
+| Lead pipeline (8 prospects) | ✅ structure | — | — | founder data only |
 
 ---
 
-## 3. Detailed Architectural Findings
+## 7. Recommended next order (per build prompt Phase 1)
 
-### 3.1 Frontend (`app/`, `lib/`)
-- **Framework:** Next.js 16 (App Router), React 19, TypeScript.
-- **Styling:** CSS Modules (`dashboard.module.css`, `login.module.css`, `catalogue.module.css`). Pure CSS with liquid glass design aesthetic.
-- **State Management:** Local storage tokens (`rivu_access_token`, `rivu_refresh_token`, `catalogue_access_token`) and React component state.
-- **Auth:** Standard email/password + Google OAuth GIS button on `/login` and `/signup`. Independent Catalogue Portal login on `/our-solutions/catalogue-data-entry`.
-
-### 3.2 Backend (`backend/app/`)
-- **Framework:** FastAPI, Pydantic v2, structlog.
-- **ORM & DB:** SQLAlchemy 2.0 (asyncpg), PostgreSQL (Neon compatible), Alembic migrations.
-- **Processing Engine:** Polars, pandas, openpyxl, reportlab.
-- **AI Integrations:** Groq client with fallback heuristics.
-- **Storage:** S3/MinIO compatible object store (`boto3`/`aioboto3`).
+1. **Run the DB-backed test suite against a real Postgres** (Neon branch or local docker-compose) — confirm `test_api`, `test_workspace_security`, `test_saas_ecommerce` pass end-to-end. This is the single highest-value next step.
+2. **Fix the Razorpay test-mode bypass** to be env-gated (security).
+3. **Decide the mapping honesty fix** — wire Groq into column mapping OR relabel marketing.
+4. **Run a 1,000 / 5,000 / 8,000 SKU benchmark** and record actual numbers.
+5. **Shopify OAuth flow** (redirect + callback + webhook + uninstall) if a public app is the goal; otherwise document the custom-app-token path clearly.
+6. Then proceed to Phase 2+ per the build prompt.
 
 ---
 
-## 4. Phase-by-Phase Implementation Plan
+## 8. What this audit does NOT claim
 
-### Phase 1: Core Multi-Tenant Foundation & Commercial Engine
-1. **Unified Multi-Tenancy & RBAC:**
-   - Define canonical user roles: `super_admin`, `owner`, `admin`, `catalogue_manager`, `operator`, `viewer`.
-   - Implement organization-scoped security dependencies.
-2. **Subscription & Billing System (Module J):**
-   - Models: `SubscriptionPlan`, `PlanEntitlement`, `Subscription`, `Payment`, `Invoice`, `UsageEvent`.
-   - Plans: Starter (₹4,999/mo), Growth, Business, Enterprise/Custom (up to ₹2,49,999/mo).
-   - Razorpay recurring billing integration with webhook verification and test-mode fallback.
-   - Server-side entitlement enforcement and GST invoice generation.
-
-### Phase 2: Enhanced PIM, SKU & Supplier Intelligence
-1. **Canonical Product & SKU Models (Module B):**
-   - Canonical `Product`, `ProductVariant`, `ProductAttribute`, `ProductMedia`, `Category`.
-   - Full support for internal SKU, parent/variant hierarchy, commercial data, inventory, and custom fields.
-2. **Supplier Data Workflows (Module G):**
-   - `Supplier` directory, supplier-specific mapping recipes, and IndiaMART-compatible templates.
-3. **Chunked Large-Catalogue Processing (Module F):**
-   - Asynchronous job execution for 1,000 to 20,000+ SKU workloads with Polars.
-   - Real-time job status and row-level progress tracking.
-
-### Phase 3: Commerce Operations & Shopify GraphQL Integration
-1. **Channel Adapter Interface (Module H & 12):**
-   - Reusable connector interface (`connect`, `sync`, `publish`, `status`).
-2. **Shopify Integration (Module 11):**
-   - Shopify GraphQL Admin API connector.
-   - OAuth flow, credentials storage, draft product creation (`productCreate`), variant mapping, and webhook handlers.
-   - Sandbox verification with clear credential requirements.
-
-### Phase 4: Custom Solutions & Internal Sales CRM
-1. **Custom Solutions Workspace (Module I):**
-   - Models: `CustomSolutionProject`, `CustomSolutionProposal`, `Milestone`.
-   - Proposal generator, quotation records, and client onboarding workflow.
-2. **Internal CRM & Lead Pipeline (Module N):**
-   - Lightweight CRM for Rivu sales team: 8-stage pipeline, lead tracking, and conversion metrics.
-
-### Phase 5: Analytics Dashboards, UI Unification & Verification
-1. **Real Operational Analytics (Module M):**
-   - Organization data intelligence metrics (completeness, issues, sync status).
-   - Super Admin revenue and platform usage metrics.
-2. **Unified Navigation & Frontend Polish (Module 21):**
-   - Integrated enterprise sidebar navigation covering Catalogues, Products, Suppliers, Channels, Billing, and Analytics.
-3. **Acceptance Testing & Verification:**
-   - Automated test suite covering subscriptions, Shopify adapters, large SKU pipelines, and multi-tenant security.
-
+- It does not claim Rivu is production-ready. It is not, until DB-backed tests pass on a real DB and the blocked credentials are supplied.
+- It does not claim any performance number.
+- It does not claim any live integration.
+- It does not fabricate customer counts, revenue, or prospects.
