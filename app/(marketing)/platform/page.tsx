@@ -11,12 +11,12 @@ import { PLATFORM_CARDS } from "../nav-config";
 export const metadata: Metadata = {
   title: "Platform",
   description:
-    "The complete Rivu platform: ingestion, profiling, AI-assisted mapping, cleaning, validation, transformation, enrichment and export — one connected refinery.",
+    "The complete Rivu platform: ingestion, profiling, smart mapping, cleaning, validation, transformation, enrichment and export — one connected refinery.",
 };
 
 const STAGES = [
   { id: "ingestion", n: "01", icon: Database, title: "Ingestion & profiling", desc: "Bring CSVs, XLSX, JSON and operational exports into a tenant-isolated workspace. Rivu profiles schema, types, nulls, duplicates and distributions before anything changes.", points: ["CSV, XLSX, JSON, text-PDF, ZIP media", "Automatic schema & column detection", "Profile report with distributions and outliers"] },
-  { id: "mapping", n: "02", icon: Wand2, title: "AI-assisted mapping", desc: "AI proposes column-to-target mappings from measured dataset facts, with confidence you can inspect. You can always override — uncertain mappings are never applied silently.", points: ["Confidence-scored suggestions", "Manual override on every field", "Type-compatibility checks before approval"] },
+  { id: "mapping", n: "02", icon: Wand2, title: "Smart, rule-based mapping", desc: "Rivu suggests column-to-target mappings by matching header synonyms and measured dataset facts, with a confidence score you can inspect. You can always override — uncertain mappings are never applied silently.", points: ["Confidence-scored suggestions", "Manual override on every field", "Type-compatibility checks before approval"] },
   { id: "quality", n: "03", icon: FileCheck2, title: "Cleaning & validation", desc: "Deterministic cleanup for nulls, duplicates, type and format normalisation, plus rule-based validation with row-level errors and warnings.", points: ["Trim, casing, date and number normalisation", "Required-field, range and pattern rules", "Error and warning separation per row"] },
   { id: "export", n: "04", icon: Workflow, title: "Transformation & export", desc: "Rename, reorder, combine, split and standardise fields with a visual preview. Every approved run produces a new, versioned output — never a silent rewrite.", points: ["Visual transformation builder", "Versioned, reviewable outputs", "CSV, XLSX, JSON and catalogue formats"] },
 ];

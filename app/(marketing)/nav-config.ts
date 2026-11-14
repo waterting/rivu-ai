@@ -30,7 +30,7 @@ export const NAV: NavGroup[] = [
       ],
       [
         { label: "Ingestion & profiling", href: "/platform#ingestion", desc: "Understand data before transforming.", icon: Table2 },
-        { label: "AI-assisted mapping", href: "/platform#mapping", desc: "Suggestions, never silent guesses.", icon: Wand2 },
+        { label: "Smart, rule-based mapping", href: "/platform#mapping", desc: "Suggestions, never silent guesses.", icon: Wand2 },
       ],
       [
         { label: "Validation & quality", href: "/platform#quality", desc: "Measure completeness and integrity.", icon: FileCheck2 },
@@ -99,7 +99,7 @@ export const SIMPLE_NAV = [
 export const PLATFORM_CARDS: NavLink[] = [
   { label: "Data Ingestion", href: "/platform#ingestion", desc: "Bring CSVs, JSON, spreadsheets and exports into one controlled workflow.", icon: Database },
   { label: "Data Profiling", href: "/platform#ingestion", desc: "Profile schemas, types, anomalies and distributions before transforming.", icon: Table2 },
-  { label: "AI-Assisted Mapping", href: "/platform#mapping", desc: "Propose column mappings with measured confidence, never silently.", icon: Wand2 },
+  { label: "Smart, Rule-Based Mapping", href: "/platform#mapping", desc: "Suggest column mappings with measured confidence, never silently.", icon: Wand2 },
   { label: "Data Cleaning", href: "/platform#quality", desc: "Deterministic cleanup: nulls, duplicates, type and format normalisation.", icon: Sparkles },
   { label: "Data Validation", href: "/platform#quality", desc: "Rules, ranges, patterns and identifiers with row-level errors.", icon: FileCheck2 },
   { label: "Data Transformation", href: "/platform#export", desc: "Rename, reorder, combine, split and standardise with a visual preview.", icon: Workflow },
