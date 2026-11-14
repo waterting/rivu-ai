@@ -583,6 +583,17 @@
   position: relative;
   z-index: 2;
 }
+.heroScene {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 0 !important;
+  opacity: 0.5;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(circle at 72% 38%, #000 0%, rgba(0,0,0,0.45) 46%, transparent 80%);
+  mask-image: radial-gradient(circle at 72% 38%, #000 0%, rgba(0,0,0,0.45) 46%, transparent 80%);
+}
 .hero > .container { position: relative; z-index: 2; }
 .heroTitle {
   font-family: "Space Grotesk", sans-serif;
@@ -595,16 +606,6 @@
 .heroTitle em { font-style: normal; color: var(--violet); }
 .heroLead { max-width: 520px; margin-top: 26px; font-size: 18px; }
 .heroActions { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
-.heroScene {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 0;
-  opacity: 0.55;
-  -webkit-mask-image: radial-gradient(circle at 70% 40%, #000 0%, rgba(0,0,0,0.5) 45%, transparent 78%);
-  mask-image: radial-gradient(circle at 70% 40%, #000 0%, rgba(0,0,0,0.5) 45%, transparent 78%);
-}
 
 .heroPoints { display: grid; gap: 12px; margin-top: 40px; }
 .heroPoint { display: flex; align-items: center; gap: 11px; font-size: 14.5px; color: var(--ink); }
