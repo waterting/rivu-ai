@@ -6,9 +6,15 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
 }
 .wrap canvas {
   display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+/* R3F renders its own container div; make it fill the wrapper. */
+.wrap > div {
   width: 100% !important;
   height: 100% !important;
 }

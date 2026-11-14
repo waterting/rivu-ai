@@ -2,11 +2,10 @@
 
 import dynamic from "next/dynamic";
 import type { SceneKind } from "./Scene3D";
-import styles from "./scene3d.module.css";
 
 const Scene3D = dynamic(() => import("./Scene3D"), {
   ssr: false,
-  loading: () => <div className={`${styles.wrap} ${styles.fallback} ${styles.hero}`} />,
+  loading: () => null,
 });
 
 export default function Scene3DMount({
