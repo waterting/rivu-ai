@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     S3_FORCE_PATH_STYLE: bool = True
     AUTO_CREATE_SCHEMA: bool = True
 
+    # Payments (Razorpay). Keys are server-side only; never expose to the frontend.
+    RAZORPAY_KEY_ID: Optional[str] = None
+    RAZORPAY_KEY_SECRET: Optional[str] = None
+    RAZORPAY_WEBHOOK_SECRET: Optional[str] = None
+    # Test-mode signature bypass. MUST stay False everywhere except a controlled
+    # test environment. Production validation rejects this being enabled.
+    RAZORPAY_ALLOW_TEST_SIGNATURES: bool = False
+
     MAX_UPLOAD_SIZE_MB: int = 500
     MAX_PROFILE_SAMPLE_ROWS: int = 100_000
     MAX_AI_SAMPLE_ROWS: int = 1_000
@@ -138,6 +146,15 @@ class Settings(BaseSettings):
                     raise RuntimeError("CATALOGUE_JWT_SECRET must be a long random secret when the Catalogue Portal is enabled")
                 if self.CATALOGUE_AUTO_CREATE_SCHEMA:
                     raise RuntimeError("CATALOGUE_AUTO_CREATE_SCHEMA must be false in production; run its schema setup script")
+            if self.RAZORPAY_ALLOW_TEST_SIGNATURES:
+                raise RuntimeError(
+                    "RAZORPAY_ALLOW_TEST_SIGNATURES must be false in production; "
+                    "test payment signatures must never be accepted in a live environment"
+                )
+            if not (self.RAZORPAY_KEY_SECRET or "").strip() or (self.RAZORPAY_KEY_SECRET or "").strip().lower() in {
+                "placeholder_secret", "changeme", "rzp_test_placeholder_key",
+            }:
+                raise RuntimeError("RAZORPAY_KEY_SECRET must be configured with a real secret in production")
 
 
 @lru_cache()

@@ -1,6 +1,8 @@
 """Comprehensive automated tests for E-Commerce Data Intelligence & Subscriptions."""
 
 import uuid
+import hashlib
+import hmac
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -347,8 +349,16 @@ async def test_connect_shopify_and_publish_draft(fake_saas_db, test_user_and_tok
 
 
 @pytest.mark.asyncio
-async def test_subscription_and_payment_flow(fake_saas_db, test_user_and_token):
-    """Initiate subscription order and verify payment activation."""
+async def test_subscription_and_payment_flow(fake_saas_db, test_user_and_token, monkeypatch):
+    """Initiate subscription order and verify payment activation with a real HMAC signature."""
+    # Configure a real secret so the genuine cryptographic verification path is
+    # exercised end to end (no test-signature bypass).
+    from app.core import razorpay as rz
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RAZORPAY_KEY_SECRET", "test_secret_key_for_hmac", raising=False)
+    monkeypatch.setattr(settings, "RAZORPAY_ALLOW_TEST_SIGNATURES", False, raising=False)
+
     async def _test_session():
         yield fake_saas_db
 
@@ -369,14 +379,28 @@ async def test_subscription_and_payment_flow(fake_saas_db, test_user_and_token):
             assert "order_id" in order_data
             assert order_data["amount_inr"] > 4999 # Includes 18% GST
 
-            # Verify payment
+            payment_id = "pay_test_12345"
+            order_id = order_data["order_id"]
+            message = f"{order_id}|{payment_id}".encode()
+            real_signature = hmac.new(b"test_secret_key_for_hmac", message, hashlib.sha256).hexdigest()
+
+            # Verify payment with the correctly computed signature
             verify_resp = await client.post("/api/v1/billing/verify-payment", json={
                 "subscription_id": order_data["subscription_id"],
-                "razorpay_payment_id": "pay_test_12345",
-                "razorpay_order_id": order_data["order_id"],
-                "razorpay_signature": "valid_test_signature"
+                "razorpay_payment_id": payment_id,
+                "razorpay_order_id": order_id,
+                "razorpay_signature": real_signature
             }, headers=headers)
             assert verify_resp.status_code == 200
+
+            # A forged signature must be rejected
+            bad_resp = await client.post("/api/v1/billing/verify-payment", json={
+                "subscription_id": order_data["subscription_id"],
+                "razorpay_payment_id": payment_id,
+                "razorpay_order_id": order_id,
+                "razorpay_signature": "deadbeef" * 8
+            }, headers=headers)
+            assert bad_resp.status_code == 400
             assert verify_resp.json()["status"] == "success"
     finally:
         app.dependency_overrides.pop(get_session, None)
