@@ -1,20 +1,25 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import styles from "./marketing.module.css";
+import Scene3DMount from "../../lib/three/Scene3DMount";
+import type { SceneKind } from "../../lib/three/Scene3D";
 
 export function PageHero({
   eyebrow,
   title,
   lead,
   children,
+  scene = "hero",
 }: {
   eyebrow: string;
   title: React.ReactNode;
   lead?: string;
   children?: React.ReactNode;
+  scene?: SceneKind;
 }) {
   return (
     <section className={styles.pageHero}>
+      <Scene3DMount kind={scene} className={styles.pageHeroScene} camera={{ position: [0, 0, 9], fov: 45 }} />
       <div className={styles.container}>
         <span className={styles.eyebrow}>{eyebrow}</span>
         <h1 className={styles.pageHeroTitle}>{title}</h1>

@@ -6,6 +6,7 @@ import {
 import styles from "./marketing.module.css";
 import { SectionHead, CTAPanel } from "./ui";
 import { PLATFORM_CARDS } from "./nav-config";
+import Scene3DMount from "../../lib/three/Scene3DMount";
 
 const WORKFLOW = ["Raw files", "Rivu refinery", "Clean data", "Business-ready"];
 
@@ -39,6 +40,7 @@ export default function HomePage() {
     <>
       {/* HERO */}
       <section className={styles.hero}>
+        <Scene3DMount kind="hero" className={styles.heroScene} />
         <div className={styles.container}>
           <div className={styles.heroGrid}>
             <div>
@@ -66,7 +68,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* product workflow preview */}
+            {/* floating glass workflow card over the 3D scene */}
             <div className={styles.flow}>
               <div className={styles.flowHead}>
                 <b>Rivu refinery workflow</b>
@@ -156,6 +158,22 @@ export default function HomePage() {
                 </Link>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* 3D SIGNATURE SHOWCASE */}
+      <section className={styles.showcase3d}>
+        <Scene3DMount kind="mesh" className={styles.showcaseScene} camera={{ position: [2.4, 0, 7.5], fov: 46 }} />
+        <div className={styles.container}>
+          <div className={styles.showcaseCopy}>
+            <span className={styles.eyebrow}>The refinery engine</span>
+            <h2>Measured. Approved. <em>Versioned.</em></h2>
+            <p>
+              Every transformation is grounded in measured dataset facts, approved by a
+              human, executed deterministically, and preserved as a new version. No black
+              boxes, no silent mutation.
+            </p>
           </div>
         </div>
       </section>

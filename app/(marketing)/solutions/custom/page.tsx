@@ -19,7 +19,7 @@ const SERVICES = [
 export default function CustomPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="globe"
         eyebrow="Custom implementations"
         title={<>Scoped to <em>your systems.</em></>}
         lead="When your data shape, source systems or target schema don't fit a standard workflow, we scope a custom implementation with you."

@@ -1,0 +1,84 @@
+/* Scene3D wrapper + CSS depth fallbacks (used when WebGL is off or
+   reduced-motion is preferred, so the page never looks empty). */
+
+.wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.wrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Static CSS depth fallbacks */
+.fallback {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* hero fallback: layered glowing cubes */
+.fallback.hero {
+  background:
+    radial-gradient(circle at 68% 42%, rgba(117, 64, 215, 0.22), transparent 46%),
+    radial-gradient(circle at 30% 70%, rgba(75, 34, 165, 0.12), transparent 40%);
+}
+.fallback.hero::before,
+.fallback.hero::after {
+  content: "";
+  position: absolute;
+  border-radius: 16px;
+  border: 1px solid rgba(117, 64, 215, 0.35);
+  background: linear-gradient(145deg, rgba(201, 168, 236, 0.28), rgba(117, 64, 215, 0.12));
+  box-shadow: 0 24px 60px rgba(75, 34, 165, 0.25);
+  transform: rotateX(56deg) rotateZ(-28deg);
+}
+.fallback.hero::before {
+  width: 220px; height: 220px;
+  right: 14%; top: 26%;
+  animation: sceneFloat 7s ease-in-out infinite;
+}
+.fallback.hero::after {
+  width: 130px; height: 130px;
+  right: 30%; top: 54%;
+  opacity: 0.7;
+  animation: sceneFloat 9s ease-in-out infinite reverse;
+}
+
+/* stream fallback: vertical data lines */
+.fallback.stream {
+  background:
+    repeating-linear-gradient(90deg, rgba(117, 64, 215, 0.12) 0 1px, transparent 1px 26px),
+    radial-gradient(circle at 50% 60%, rgba(117, 64, 215, 0.16), transparent 60%);
+}
+
+/* mesh fallback: concentric rings */
+.fallback.mesh {
+  background:
+    repeating-radial-gradient(circle at 50% 50%, rgba(117, 64, 215, 0.14) 0 1px, transparent 1px 34px),
+    radial-gradient(circle at 50% 50%, rgba(117, 64, 215, 0.18), transparent 58%);
+}
+
+/* globe fallback: dotted sphere */
+.fallback.globe {
+  background:
+    radial-gradient(circle at 50% 46%, rgba(117, 64, 215, 0.18), transparent 42%),
+    radial-gradient(rgba(201, 168, 236, 0.4) 1px, transparent 1px);
+  background-size: auto, 20px 20px;
+  mask-image: radial-gradient(circle at 50% 46%, #000 30%, transparent 62%);
+}
+
+@keyframes sceneFloat {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fallback.hero::before,
+  .fallback.hero::after {
+    animation: none;
+  }
+}

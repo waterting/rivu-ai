@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function SolutionsPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="globe"
         eyebrow="Solutions"
         title={<>Rivu fits the shape of <em>your data.</em></>}
         lead="Every solution below describes a real workflow — the problem, the Rivu path through it, the expected output and the tools involved. No invented outcomes."

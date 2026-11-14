@@ -27,7 +27,7 @@ const FLOW = [
 export default function DataRefineryPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="stream"
         eyebrow="Core engine"
         title={<>The Data <em>Refinery.</em></>}
         lead="A structured, controlled pipeline that turns raw operational files into clean, validated, explainable and analysis-ready data — with an AI-assisted layer that keeps humans in control."

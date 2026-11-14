@@ -51,7 +51,7 @@ const TOOLS: Tool[] = [
 export default function ToolsPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="mesh"
         eyebrow="Tools Centre"
         title={<>Independent tools. <em>One processing engine.</em></>}
         lead="Each tool has its own workspace, input controls, processing logic, results, history and export. These are working utilities inside the Rivu workspace — not decorative cards."

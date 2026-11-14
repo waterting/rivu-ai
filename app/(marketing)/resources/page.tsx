@@ -51,7 +51,7 @@ const FAQS = [
 export default function ResourcesPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="hero"
         eyebrow="Resources"
         title={<>Learn how the <em>refinery works.</em></>}
         lead="Documentation, guides and answers — grounded in what Rivu actually does, not marketing claims."

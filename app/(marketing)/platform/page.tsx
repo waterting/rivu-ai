@@ -24,7 +24,7 @@ const STAGES = [
 export default function PlatformPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="hero"
         eyebrow="The platform"
         title={<>One refinery. <em>Every layer</em> of data preparation.</>}
         lead="Rivu covers the full data-preparation lifecycle as a connected set of capabilities — so your team stops stitching together disconnected scripts."

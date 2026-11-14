@@ -19,7 +19,7 @@ const VALUES = [
 export default function AboutPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="globe"
         eyebrow="About Rivu"
         title={<>A data refinery built by <em>WaterTing.</em></>}
         lead="Rivu AI turns fragmented, messy and unstructured business data into clean, structured and usable datasets — with an AI-assisted layer that keeps humans in control."

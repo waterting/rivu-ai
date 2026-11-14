@@ -61,7 +61,7 @@ const FRAMEWORK = [
 export default function IntegrationsPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="globe"
         eyebrow="Integrations"
         title={<>Connect your <em>commerce stack.</em></>}
         lead="Rivu connects to the systems your data already lives in. Every connector shows an honest status — we never present a connector as live without working credentials and tested APIs."

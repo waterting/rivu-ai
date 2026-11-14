@@ -21,7 +21,7 @@ const STEPS = [
 export default function SupplierDataPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="stream"
         eyebrow="Supplier data management"
         title={<>Reconcile inconsistent supplier <em>and operational sheets.</em></>}
         lead="Assess column differences, normalise formats and define quality rules before consolidating operational exports into one usable dataset."

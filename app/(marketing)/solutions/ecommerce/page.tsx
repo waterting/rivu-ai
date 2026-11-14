@@ -32,7 +32,7 @@ const TOOLS = [
 export default function EcommercePage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="mesh"
         eyebrow="E-commerce & retail"
         title={<>Product data that is <em>consistent, validated and export-ready.</em></>}
         lead="Map supplier spreadsheets into a defined catalogue structure, flag missing fields and prepare a validated export for Shopify or WooCommerce."

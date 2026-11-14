@@ -23,7 +23,7 @@ const PILLARS = [
 export default function SecurityPage() {
   return (
     <>
-      <PageHero
+      <PageHero scene="mesh"
         eyebrow="Security & governance"
         title={<>Controlled data movement, <em>by design.</em></>}
         lead="Rivu is built so that what you approve is exactly what runs — with isolation, traceability and human control at every step."
