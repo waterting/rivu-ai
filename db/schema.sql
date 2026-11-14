@@ -631,3 +631,311 @@ CREATE TRIGGER update_ai_conversations_updated_at BEFORE UPDATE ON ai_conversati
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_jobs_updated_at BEFORE UPDATE ON jobs
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+
+-- ──────────────────────────────────────────────
+-- E-COMMERCE DATA INTELLIGENCE & BUSINESS OPERATIONS
+-- ──────────────────────────────────────────────
+
+CREATE TABLE subscription_plans (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  code                  VARCHAR(50) NOT NULL UNIQUE,
+  name                  VARCHAR(100) NOT NULL,
+  description           VARCHAR(500),
+  monthly_price_inr     INTEGER NOT NULL,
+  annual_price_inr      INTEGER,
+  currency              VARCHAR(10) DEFAULT 'INR',
+  sku_limit             INTEGER DEFAULT 1000,
+  monthly_rows_limit    INTEGER DEFAULT 50000,
+  max_file_size_mb      INTEGER DEFAULT 100,
+  user_seats_limit      INTEGER DEFAULT 3,
+  catalogues_limit      INTEGER DEFAULT 5,
+  channels_limit        INTEGER DEFAULT 1,
+  ai_enrichment_credits INTEGER DEFAULT 250,
+  api_access            BOOLEAN DEFAULT FALSE,
+  custom_integrations   BOOLEAN DEFAULT FALSE,
+  support_tier          VARCHAR(50) DEFAULT 'standard',
+  is_active             BOOLEAN DEFAULT TRUE,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_subscription_plans_code ON subscription_plans(code);
+
+CREATE TABLE subscriptions (
+  id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id         UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  plan_id                 UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE RESTRICT,
+  status                  VARCHAR(50) NOT NULL DEFAULT 'trial',
+  billing_cycle           VARCHAR(20) DEFAULT 'monthly',
+  current_period_start    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  current_period_end      TIMESTAMPTZ NOT NULL,
+  cancel_at_period_end    BOOLEAN DEFAULT FALSE,
+  canceled_at             TIMESTAMPTZ,
+  custom_price_inr        INTEGER,
+  custom_sku_limit        INTEGER,
+  custom_rows_limit       INTEGER,
+  custom_ai_credits       INTEGER,
+  gateway_provider        VARCHAR(50) DEFAULT 'razorpay',
+  gateway_subscription_id VARCHAR(100),
+  gateway_customer_id     VARCHAR(100),
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_subscriptions_org ON subscriptions(organization_id);
+CREATE INDEX idx_subscriptions_status ON subscriptions(status);
+
+CREATE TABLE usage_events (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  event_type      VARCHAR(50) NOT NULL,
+  quantity        INTEGER NOT NULL DEFAULT 1,
+  idempotency_key VARCHAR(120) UNIQUE,
+  metadata_info   JSONB DEFAULT '{}',
+  recorded_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_usage_events_org ON usage_events(organization_id);
+CREATE INDEX idx_usage_events_type ON usage_events(event_type);
+
+CREATE TABLE invoices (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id  UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  subscription_id  UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+  invoice_number   VARCHAR(100) NOT NULL UNIQUE,
+  customer_name    VARCHAR(200) NOT NULL,
+  customer_email   VARCHAR(320) NOT NULL,
+  customer_gstin   VARCHAR(20),
+  customer_address VARCHAR(500),
+  provider_gstin   VARCHAR(20),
+  subtotal_inr     NUMERIC(12, 2) NOT NULL,
+  cgst_inr         NUMERIC(12, 2) DEFAULT 0.0,
+  sgst_inr         NUMERIC(12, 2) DEFAULT 0.0,
+  igst_inr         NUMERIC(12, 2) DEFAULT 0.0,
+  total_inr        NUMERIC(12, 2) NOT NULL,
+  status           VARCHAR(50) DEFAULT 'issued',
+  due_date         TIMESTAMPTZ,
+  paid_at          TIMESTAMPTZ,
+  pdf_url          VARCHAR(500),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_invoices_org ON invoices(organization_id);
+CREATE INDEX idx_invoices_number ON invoices(invoice_number);
+
+CREATE TABLE payments (
+  id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id    UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  subscription_id    UUID REFERENCES subscriptions(id) ON DELETE SET NULL,
+  invoice_id         UUID REFERENCES invoices(id) ON DELETE SET NULL,
+  amount_inr         NUMERIC(12, 2) NOT NULL,
+  currency           VARCHAR(10) DEFAULT 'INR',
+  status             VARCHAR(50) DEFAULT 'pending',
+  gateway_provider   VARCHAR(50) DEFAULT 'razorpay',
+  gateway_payment_id VARCHAR(100) UNIQUE,
+  gateway_order_id   VARCHAR(100),
+  gateway_signature  VARCHAR(255),
+  failure_reason     VARCHAR(500),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_payments_org ON payments(organization_id);
+CREATE INDEX idx_payments_gateway_id ON payments(gateway_payment_id);
+
+CREATE TABLE suppliers (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  name            VARCHAR(200) NOT NULL,
+  code            VARCHAR(50) NOT NULL,
+  contact_name    VARCHAR(150),
+  contact_email   VARCHAR(320),
+  contact_phone   VARCHAR(50),
+  website         VARCHAR(255),
+  default_format  VARCHAR(50) DEFAULT 'csv',
+  notes           TEXT,
+  is_active       BOOLEAN DEFAULT TRUE,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_suppliers_org ON suppliers(organization_id);
+CREATE INDEX idx_suppliers_code ON suppliers(code);
+
+CREATE TABLE supplier_mapping_recipes (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id  UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  supplier_id      UUID NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+  name             VARCHAR(100) NOT NULL,
+  source_columns   JSONB DEFAULT '[]',
+  mapping_rules    JSONB DEFAULT '{}',
+  confidence_score FLOAT DEFAULT 1.0,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_supplier_recipes_org ON supplier_mapping_recipes(organization_id);
+CREATE INDEX idx_supplier_recipes_supplier ON supplier_mapping_recipes(supplier_id);
+
+CREATE TABLE products (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  supplier_id           UUID REFERENCES suppliers(id) ON DELETE SET NULL,
+  sku                   VARCHAR(100) NOT NULL,
+  parent_sku            VARCHAR(100),
+  barcode               VARCHAR(100),
+  supplier_sku          VARCHAR(100),
+  brand                 VARCHAR(100),
+  manufacturer          VARCHAR(150),
+  model                 VARCHAR(100),
+  title                 VARCHAR(500) NOT NULL,
+  short_description     TEXT,
+  description           TEXT,
+  category              VARCHAR(200),
+  subcategory           VARCHAR(200),
+  tags                  JSONB DEFAULT '[]',
+  material              VARCHAR(100),
+  colour                VARCHAR(50),
+  size                  VARCHAR(50),
+  weight_kg             FLOAT,
+  dimensions_cm         VARCHAR(100),
+  custom_attributes     JSONB DEFAULT '{}',
+  mrp                   NUMERIC(12, 2),
+  selling_price         NUMERIC(12, 2),
+  cost_price            NUMERIC(12, 2),
+  currency              VARCHAR(10) DEFAULT 'INR',
+  tax_rate              FLOAT,
+  stock_quantity        INTEGER DEFAULT 0,
+  inventory_status      VARCHAR(50) DEFAULT 'in_stock',
+  primary_image_url     VARCHAR(1000),
+  additional_image_urls JSONB DEFAULT '[]',
+  is_valid              BOOLEAN DEFAULT TRUE,
+  validation_errors     JSONB DEFAULT '[]',
+  validation_warnings   JSONB DEFAULT '[]',
+  completeness_score    FLOAT DEFAULT 100.0,
+  is_approved           BOOLEAN DEFAULT FALSE,
+  is_archived           BOOLEAN DEFAULT FALSE,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_products_org ON products(organization_id);
+CREATE INDEX idx_products_sku ON products(sku);
+CREATE INDEX idx_products_brand ON products(brand);
+CREATE INDEX idx_products_category ON products(category);
+
+CREATE TABLE product_variants (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  parent_product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  variant_sku       VARCHAR(100) NOT NULL,
+  barcode           VARCHAR(100),
+  title             VARCHAR(255),
+  option1_name      VARCHAR(50),
+  option1_value     VARCHAR(50),
+  option2_name      VARCHAR(50),
+  option2_value     VARCHAR(50),
+  selling_price     NUMERIC(12, 2),
+  mrp               NUMERIC(12, 2),
+  stock_quantity    INTEGER DEFAULT 0,
+  image_url         VARCHAR(1000),
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_product_variants_product ON product_variants(parent_product_id);
+CREATE INDEX idx_product_variants_sku ON product_variants(variant_sku);
+
+CREATE TABLE channel_connections (
+  id                     UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id        UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  channel_type           VARCHAR(50) NOT NULL,
+  name                   VARCHAR(150) NOT NULL,
+  store_url              VARCHAR(255) NOT NULL,
+  access_token_encrypted TEXT,
+  api_key_encrypted      TEXT,
+  api_secret_encrypted   TEXT,
+  webhook_secret         VARCHAR(255),
+  status                 VARCHAR(50) DEFAULT 'disconnected',
+  last_sync_at           TIMESTAMPTZ,
+  sync_settings          JSONB DEFAULT '{}',
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_channel_conn_org ON channel_connections(organization_id);
+
+CREATE TABLE channel_product_listings (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  channel_connection_id UUID NOT NULL REFERENCES channel_connections(id) ON DELETE CASCADE,
+  product_id            UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  external_product_id   VARCHAR(150),
+  listing_status        VARCHAR(50) DEFAULT 'draft',
+  sync_status           VARCHAR(50) DEFAULT 'pending',
+  last_error            TEXT,
+  last_synced_at        TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_channel_listings_conn ON channel_product_listings(channel_connection_id);
+CREATE INDEX idx_channel_listings_prod ON channel_product_listings(product_id);
+
+CREATE TABLE custom_solution_projects (
+  id                              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id                 UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  name                            VARCHAR(200) NOT NULL,
+  client_contact_name             VARCHAR(150),
+  client_contact_email            VARCHAR(320),
+  sku_volume_estimate             INTEGER DEFAULT 5000,
+  data_sources                    JSONB DEFAULT '[]',
+  target_platforms                JSONB DEFAULT '[]',
+  one_time_implementation_fee_inr INTEGER DEFAULT 50000,
+  monthly_subscription_fee_inr    INTEGER DEFAULT 14999,
+  status                          VARCHAR(50) DEFAULT 'inquiry',
+  deliverables                    JSONB DEFAULT '[]',
+  timeline_weeks                  INTEGER DEFAULT 4,
+  assigned_lead_engineer          VARCHAR(150),
+  created_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_custom_projects_org ON custom_solution_projects(organization_id);
+CREATE INDEX idx_custom_projects_status ON custom_solution_projects(status);
+
+CREATE TABLE project_milestones (
+  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id   UUID NOT NULL REFERENCES custom_solution_projects(id) ON DELETE CASCADE,
+  title        VARCHAR(200) NOT NULL,
+  description  TEXT,
+  status       VARCHAR(50) DEFAULT 'pending',
+  target_date  TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_project_milestones_proj ON project_milestones(project_id);
+
+CREATE TABLE leads (
+  id                           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  company_name                 VARCHAR(200) NOT NULL,
+  contact_person               VARCHAR(150) NOT NULL,
+  email                        VARCHAR(320) NOT NULL,
+  phone                        VARCHAR(50),
+  business_type                VARCHAR(100) DEFAULT 'distributor',
+  sku_volume_estimate          INTEGER DEFAULT 1000,
+  selling_channels             JSONB DEFAULT '[]',
+  source_channel               VARCHAR(100),
+  problem_description          TEXT,
+  pipeline_stage               VARCHAR(50) DEFAULT 'lead_identified',
+  estimated_contract_value_inr INTEGER DEFAULT 0,
+  interest_level               VARCHAR(50) DEFAULT 'medium',
+  next_follow_up               TIMESTAMPTZ,
+  owner                        VARCHAR(100),
+  notes                        TEXT,
+  lost_reason                  VARCHAR(255),
+  created_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_leads_company ON leads(company_name);
+CREATE INDEX idx_leads_email ON leads(email);
+CREATE INDEX idx_leads_stage ON leads(pipeline_stage);
