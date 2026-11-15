@@ -281,6 +281,12 @@ async def process_dataset_async(
                     "integrity": quality_data.get("integrity_score"),
                 },
                 "unavailable_dimensions": quality_data.get("unavailable_dimensions", []),
+                "parse": {
+                    "peak_rss_mb": parse_meta.get("peak_rss_mb"),
+                    "python_alloc_mb": parse_meta.get("parse_python_alloc_mb"),
+                    "encoding": parse_meta.get("encoding"),
+                    "delimiter": parse_meta.get("delimiter"),
+                },
                 "duplicates": {
                     "exact_rows": (duplicates or {}).get("exact_rows", {}).get("count", 0),
                     "key_excess_rows": (duplicates or {}).get("total_extra_rows", 0),

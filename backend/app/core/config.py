@@ -85,6 +85,17 @@ class Settings(BaseSettings):
     MAX_AI_SAMPLE_ROWS: int = 1_000
     JOB_WORKER_CONCURRENCY: int = 4
 
+    # Bound peak memory during ingestion (audit finding: peak memory must be
+    # measured and bounded). Parsing holds the encoded bytes plus at least one
+    # decoded copy, so an in-memory decoded budget caps the worst case instead
+    # of letting a pathological file exhaust the process.
+    MAX_DECODED_SIZE_MB: int = 1024
+
+    # Record the peak allocation of each parse on the job result. tracemalloc
+    # adds measurable overhead to the parse window; turn it off on
+    # latency-critical deployments that already cap memory another way.
+    MEASURE_PARSE_MEMORY: bool = True
+
     # Process uploaded datasets in the API process (FastAPI BackgroundTasks) when
     # no separate database-backed worker is running. Enable this on deployments
     # without a worker (e.g. free-tier hosts that do not support background

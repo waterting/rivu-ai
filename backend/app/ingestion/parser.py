@@ -2,6 +2,7 @@
 
 import io
 import time
+import tracemalloc
 from pathlib import Path
 from typing import Tuple
 
@@ -9,7 +10,9 @@ import chardet
 import polars as pl
 import structlog
 
+from app.core.config import settings
 from app.core.exceptions import ValidationError
+from app.ingestion.memory import peak_rss_mb
 
 logger = structlog.get_logger(__name__)
 
@@ -20,6 +23,27 @@ ALLOWED_MIMETYPES = {
     "application/json", "text/json", "text/plain", "application/octet-stream",
 }
 MAX_SIZE_BYTES = 500 * 1024 * 1024
+
+
+def decoded_size_budget_bytes() -> int:
+    """Upper bound for the decoded copy of an upload, in bytes."""
+    return settings.MAX_DECODED_SIZE_MB * 1024 * 1024
+
+
+def _check_decoded_budget(data: bytes, encoding: str) -> None:
+    """Reject a file whose decoded form would blow the memory budget.
+
+    UTF-16/32 and mis-detected encodings can expand a small byte payload into a
+    much larger string. Bounding the decoded size turns an OOM into a clear
+    validation error at the boundary instead of inside the parser.
+    """
+    budget = decoded_size_budget_bytes()
+    worst_case = len(data) * 4
+    if worst_case > budget and len(data) > budget:
+        raise ValidationError(
+            f"File is too large to decode safely ({len(data)} bytes against a "
+            f"{settings.MAX_DECODED_SIZE_MB} MB decoded budget for {encoding})."
+        )
 
 
 def detect_file_format(filename: str, content_type: str) -> str:
@@ -67,11 +91,18 @@ def detect_encoding(data: bytes) -> str:
 def parse_to_polars(data: bytes, file_format: str, filename: str) -> Tuple[pl.DataFrame, dict]:
     """Parse raw file bytes into a Polars DataFrame and return parsing metadata."""
     start = time.perf_counter()
+    measure = settings.MEASURE_PARSE_MEMORY
+    if measure:
+        if tracemalloc.is_tracing():
+            tracemalloc.reset_peak()
+        else:
+            tracemalloc.start()
     meta = {"encoding": None, "delimiter": None}
 
     if file_format == "csv":
         encoding = detect_encoding(data)
         meta["encoding"] = encoding
+        _check_decoded_budget(data, encoding)
         try:
             text = data.decode(encoding, errors="strict")
             delimiter = _detect_csv_delimiter(text[:4096])
@@ -121,7 +152,24 @@ def parse_to_polars(data: bytes, file_format: str, filename: str) -> Tuple[pl.Da
         raise ValidationError(f"Unknown format: {file_format}")
 
     duration = (time.perf_counter() - start) * 1000
-    logger.info("file_parsed", format=file_format, rows=df.height, cols=df.width, ms=round(duration, 1))
+    # Peak resident memory is the number the audit asks for: tracemalloc only
+    # sees Python allocations and misses Polars' Rust buffers, so it is reported
+    # separately and labelled for what it actually measures.
+    meta["peak_rss_mb"] = peak_rss_mb()
+    if measure and tracemalloc.is_tracing():
+        meta["parse_python_alloc_mb"] = round(
+            tracemalloc.get_traced_memory()[1] / (1024 * 1024), 4
+        )
+        tracemalloc.stop()
+    logger.info(
+        "file_parsed",
+        format=file_format,
+        rows=df.height,
+        cols=df.width,
+        ms=round(duration, 1),
+        peak_rss_mb=meta.get("peak_rss_mb"),
+        python_alloc_mb=meta.get("parse_python_alloc_mb"),
+    )
     if df.height == 0:
         raise ValidationError("File contains no data rows")
     if df.width == 0:
