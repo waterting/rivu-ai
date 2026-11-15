@@ -6,7 +6,7 @@ import { FileJson, Table2, Wand2, Sparkles, CopyCheck, FileCheck2, Boxes, ScanBa
 import styles from "../dashboard.module.css";
 
 const TOOLS = [
-  { id: "format-studio", name: "Format Studio", icon: FileJson, status: "live", desc: "Export refined datasets to CSV/XLSX/JSON/Parquet from the dataset view.", href: "/dashboard" },
+  { id: "format-studio", name: "Format Studio", icon: FileJson, status: "live", desc: "Export any dataset version to CSV, XLSX, JSON or Parquet from stored artifacts.", href: "/dashboard/tools/format-studio" },
   { id: "profiler", name: "Data Profiler", icon: Table2, status: "live", desc: "Structural & statistical profiling with semantic type inference.", href: "/dashboard" },
   { id: "cleaner", name: "Data Cleaner", icon: Sparkles, status: "live", desc: "Deterministic cleaning ops (trim, case, nulls, outliers, formats).", href: "/dashboard/refinery" },
   { id: "validator", name: "Data Validator", icon: FileCheck2, status: "live", desc: "Quality rules, issue findings and validation scoring.", href: "/dashboard" },
@@ -16,7 +16,7 @@ const TOOLS = [
   { id: "duplicate-finder", name: "Duplicate Finder", icon: CopyCheck, status: "live", desc: "Flag/remove duplicates via refinery transform ops.", href: "/dashboard/refinery" },
   { id: "compare", name: "Data Compare", icon: GitCompare, status: "live", desc: "Diff two profiled datasets: rows, columns, nulls, duplicates, column types and null-rate shifts.", href: "/dashboard/tools/compare" },
   { id: "sku-manager", name: "SKU & Variant Manager", icon: ScanBarcode, status: "live", desc: "PIM product & variant records (create/list via Commerce API).", href: "/dashboard/products" },
-  { id: "media-matcher", name: "Media Matcher", icon: Images, status: "planned", desc: "Match product media to SKUs — requires a defined matching spec; not yet automated.", href: "/dashboard/products" },
+  { id: "media-matcher", name: "Media Matcher", icon: Images, status: "live", desc: "Audit whether product image filenames reference their SKU, with per-image reasons.", href: "/dashboard/tools/media-matcher" },
   { id: "bulk-exporter", name: "Bulk Exporter", icon: Download, status: "live", desc: "Bulk catalogue export (XLSX/CSV/JSON) from Catalogue portal.", href: "/our-solutions/catalogue-data-entry" },
   { id: "quality-report", name: "Data Quality Report", icon: Gauge, status: "live", desc: "JSON/dashboard/PDF/executive reports with measured scores.", href: "/dashboard/reports" },
   { id: "transformation-builder", name: "Custom Transformation Builder", icon: Workflow, status: "live", desc: "Build allowlisted transformation plans (23 deterministic ops).", href: "/dashboard/refinery" },
