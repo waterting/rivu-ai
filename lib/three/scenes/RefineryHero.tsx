@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Float, MeshTransmissionMaterial, Environment, Sparkles } from "@react-three/drei";
+import { Float, Sparkles } from "@react-three/drei";
+import { SceneEnvironment } from "../SceneEnvironment";
 import * as THREE from "three";
 
 const VIOLET = "#7540d7";
@@ -31,19 +32,22 @@ function GlassCube({
     <Float speed={1.4 * speed} rotationIntensity={0.5} floatIntensity={0.9}>
       <mesh ref={ref} position={position} scale={scale}>
         <boxGeometry args={[1, 1, 1]} />
-        <MeshTransmissionMaterial
+        {/* Built-in physical transmission rather than drei's MeshTransmissionMaterial:
+            that component allocates its own render target per instance, so five
+            cubes meant five extra full scene passes every frame. Physical
+            transmission shares one pass for all of them and looks the same at
+            this scale. */}
+        <meshPhysicalMaterial
           color={color}
           transmission={0.92}
           thickness={0.7}
           roughness={0.12}
           ior={1.3}
-          chromaticAberration={0.5}
-          anisotropy={0.3}
-          distortion={0.2}
-          distortionScale={0.3}
-          temporalDistortion={0.1}
           attenuationColor={DEEP}
           attenuationDistance={2.4}
+          metalness={0}
+          clearcoat={0.6}
+          clearcoatRoughness={0.2}
         />
       </mesh>
     </Float>
@@ -82,7 +86,7 @@ export function RefineryHeroScene() {
       <ambientLight intensity={0.5} />
       <pointLight position={[5, 5, 5]} intensity={120} color={VIOLET} />
       <pointLight position={[-5, -3, 2]} intensity={60} color={LAV} />
-      <Environment preset="city" />
+      <SceneEnvironment />
 
       {/* glowing inner core */}
       <mesh ref={core}>
