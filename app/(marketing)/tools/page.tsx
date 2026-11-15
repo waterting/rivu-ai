@@ -81,7 +81,13 @@ export default function ToolsPage() {
             {TOOLS.map((t) => {
               const Icon = t.icon;
               return (
-                <div key={t.id} id={t.id} className={`${styles.card} ${styles.cardHover} ${styles.toolCard}`}>
+                <Link
+                  key={t.id}
+                  id={t.id}
+                  href={`/signup?tool=${t.id}`}
+                  className={`${styles.card} ${styles.cardHover} ${styles.toolCard}`}
+                  style={{ textDecoration: "none", color: "inherit" }}
+                >
                   <span className={styles.toolId}>TOOL {t.num}</span>
                   <div className={styles.iconBadge} style={{ marginTop: 14 }}><Icon /></div>
                   <h3 className={styles.featureTitle}>{t.name}</h3>
@@ -90,7 +96,7 @@ export default function ToolsPage() {
                     <span>in: {t.inFmt}</span>
                     <span>out: {t.outFmt}</span>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>

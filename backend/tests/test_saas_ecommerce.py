@@ -423,9 +423,13 @@ async def test_operational_analytics_endpoints(fake_saas_db, test_user_and_token
             data = org_analytics.json()
             assert "catalogue" in data
             assert "average_completeness_score" in data["catalogue"]
-
-            admin_analytics = await client.get("/api/v1/analytics/admin", headers=headers)
+            admin_analytics = await client.get("/api/v1/analytics/admin", 
+headers=headers)
             assert admin_analytics.status_code == 200
-            assert "current_month_mrr_inr" in admin_analytics.json()
+            data = admin_analytics.json()
+            # Real recurring MRR is reported separately from cash collected.
+            assert "current_mrr_inr" in data
+            assert "collected_this_month_inr" in data
+            assert "current_month_mrr_inr" not in data
     finally:
         app.dependency_overrides.pop(get_session, None)

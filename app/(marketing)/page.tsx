@@ -340,6 +340,30 @@ export default function HomePage() {
         primary={{ label: "Start with Rivu", href: "/signup" }}
         secondary={{ label: "Talk to our team", href: "/contact" }}
       />
+
+      {/* Explore the Workspace — one unified tool, not disconnected apps. */}
+      <section className={styles.section}>
+        <div className={styles.container}>
+          <div className={styles.exploreCard} id="explore">
+            <div className={styles.exploreInner}>
+              <div className={styles.eyebrow} style={{ color: "#b794f6" }}>The Rivu AI Workspace</div>
+              <h2 className={styles.exploreTitle}>Explore the <em>Rivu AI Workspace</em></h2>
+              <p className={styles.exploreLead}>
+                Discover one unified platform to clean, transform, analyse, visualize and manage your
+                business data — every tool, dataset and workflow in a single authenticated workspace.
+              </p>
+              <div className={styles.exploreRow}>
+                <Link href="/signup" className={`${styles.btn} ${styles.btnViolet}`}>
+                  Explore the Tool <ArrowRight />
+                </Link>
+                <Link href="/contact" className={`${styles.btn} ${styles.btnOnDark}`}>
+                  Book a Demo
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </>
   );
 }

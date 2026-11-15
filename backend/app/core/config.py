@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     # test environment. Production validation rejects this being enabled.
     RAZORPAY_ALLOW_TEST_SIGNATURES: bool = False
 
+    # Verified business billing identity used on GST invoices. Never invent a GSTIN:
+    # leave these empty until the real, verified company details are configured for
+    # the deployment. Invoices will carry an empty provider GSTIN until set.
+    BUSINESS_LEGAL_NAME: str = ""
+    BUSINESS_GSTIN: str = ""
+
     MAX_UPLOAD_SIZE_MB: int = 500
     MAX_PROFILE_SAMPLE_ROWS: int = 100_000
     MAX_AI_SAMPLE_ROWS: int = 1_000

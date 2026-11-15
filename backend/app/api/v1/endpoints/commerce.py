@@ -21,6 +21,7 @@ from app.schemas.commerce import (
 )
 from app.core.entitlements import check_organization_entitlement, record_usage_metric
 from app.core.shopify import ShopifyGraphQLClient
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -228,23 +229,41 @@ async def connect_channel(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """Connect a Shopify store or other sales channel."""
-    org_id = current_user.active_org_id
+    """Connect a Shopify store or other sales channel.
 
-    status_result = "connected"
+    A real access token is required. Sandbox/placeholder tokens are only accepted
+    outside production (and are stored with status='sandbox' so they are never
+    presented as a genuine live connection).
+    """
+    org_id = current_user.active_org_id
+    is_prod = (getattr(settings, "APP_ENV", "") or "").strip().lower() in {"production", "prod"}
+
+    token = (body.access_token or "").strip()
     if body.channel_type.lower() == "shopify":
-        client = ShopifyGraphQLClient(store_url=body.store_url, access_token=body.access_token)
+        if not token:
+            raise HTTPException(status_code=400, detail="A Shopify Admin API access token is required.")
+        client = ShopifyGraphQLClient(store_url=body.store_url, access_token=token)
+        if is_prod and not client.is_configured():
+            raise HTTPException(
+                status_code=400,
+                detail="Sandbox or placeholder tokens are not accepted in production. Provide a real Shopify Admin API access token.",
+            )
         try:
             await client.verify_connection()
         except Exception as exc:
             raise HTTPException(status_code=400, detail=f"Shopify connection verification failed: {exc}")
+
+    # Never present a non-configured (sandbox) connection as a live connection.
+    status_result = "connected"
+    if body.channel_type.lower() == "shopify" and not client.is_configured():
+        status_result = "sandbox"
 
     connection = ChannelConnection(
         organization_id=org_id,
         channel_type=body.channel_type.lower(),
         name=body.name,
         store_url=body.store_url,
-        access_token_encrypted=body.access_token, # Server-side only
+        access_token_encrypted=token, # Server-side only
         api_key_encrypted=body.api_key,
         api_secret_encrypted=body.api_secret,
         status=status_result,

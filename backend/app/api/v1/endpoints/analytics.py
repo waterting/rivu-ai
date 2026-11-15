@@ -6,11 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_session
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_org_role
 from app.models.user import User
 from app.models.organization import Organization
 from app.models.commerce import Product, Supplier, ChannelConnection, ChannelProductListing
-from app.models.billing import Subscription, Invoice, UsageEvent
+from app.models.billing import Subscription, SubscriptionPlan, Invoice, UsageEvent
 
 router = APIRouter()
 
@@ -71,16 +71,45 @@ async def get_super_admin_analytics(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """Platform-wide Super Admin analytics computed directly from live production records."""
+    """Platform-wide Super Admin analytics computed directly from live production records.
+
+    Authorization: requires an organization owner/admin role. NOTE: this is a
+    platform-wide view; until a dedicated super-admin role exists, any tenant
+    owner/admin can read aggregate platform counts. Restrict to a super-admin
+    role once that concept is introduced.
+    """
+    await require_org_role(current_user, db, {"owner", "admin"})
+
     total_orgs = await db.scalar(select(func.count(Organization.id))) or 0
     total_users = await db.scalar(select(func.count(User.id))) or 0
     active_subscriptions = await db.scalar(select(func.count(Subscription.id)).where(Subscription.status == "active")) or 0
     trial_subscriptions = await db.scalar(select(func.count(Subscription.id)).where(Subscription.status == "trial")) or 0
 
-    # Monthly Recurring Revenue (MRR) from real active paid subscriptions
-    mrr_inr = await db.scalar(
+    # Monthly Recurring Revenue (MRR): the monthly-equivalent value of ACTIVE
+    # paid subscriptions. This is the real recurring revenue run-rate, distinct
+    # from cash collected in a given month (which may include one-off/annual
+    # invoices). Annual plans are normalised to a monthly value (annual / 12).
+    active_subs = (await db.execute(select(Subscription).where(Subscription.status == "active"))).scalars().all()
+    plans = (await db.execute(select(SubscriptionPlan))).scalars().all()
+    plan_map = {p.id: p for p in plans}
+    mrr_inr = 0.0
+    for sub in active_subs:
+        plan = plan_map.get(sub.plan_id)
+        if plan is None:
+            continue
+        monthly_base = float(sub.custom_price_inr or plan.monthly_price_inr or 0.0)
+        if sub.billing_cycle == "annual":
+            annual = float(plan.annual_price_inr or (monthly_base * 12))
+            mrr_inr += annual / 12.0
+        else:
+            mrr_inr += monthly_base
+
+    # Cash actually collected this calendar month (paid invoices), reported
+    # separately so it is never confused with MRR.
+    month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    collected_this_month_inr = await db.scalar(
         select(func.coalesce(func.sum(Invoice.total_inr), 0.0))
-        .where(Invoice.status == "paid", Invoice.paid_at >= datetime.now(timezone.utc).replace(day=1))
+        .where(Invoice.status == "paid", Invoice.paid_at >= month_start)
     ) or 0.0
 
     total_platform_skus = await db.scalar(select(func.count(Product.id))) or 0
@@ -90,6 +119,9 @@ async def get_super_admin_analytics(
         "platform_users": total_users,
         "active_paid_subscriptions": active_subscriptions,
         "trial_subscriptions": trial_subscriptions,
-        "current_month_mrr_inr": float(mrr_inr),
+        # Real recurring revenue run-rate (monthly-equivalent of active subs).
+        "current_mrr_inr": round(float(mrr_inr), 2),
+        # Cash collected this calendar month (paid invoices) — not MRR.
+        "collected_this_month_inr": round(float(collected_this_month_inr), 2),
         "total_catalogued_skus": total_platform_skus,
     }

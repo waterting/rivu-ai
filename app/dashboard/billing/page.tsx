@@ -79,8 +79,17 @@ const authHeaders = () => ({
   Authorization: "Bearer " + (typeof window !== "undefined" ? localStorage.getItem("rivu_access_token") || "" : ""),
 });
 
-function getSimulatedPaymentId(planCode: string): string {
-  return "pay_sim_" + planCode + "_verified";
+function loadRazorpayScript(): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return resolve(false);
+    const w = window as unknown as { Razorpay?: unknown };
+    if (w.Razorpay) return resolve(true);
+    const s = document.createElement("script");
+    s.src = "https://checkout.razorpay.com/v1/checkout.js";
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.body.appendChild(s);
+  });
 }
 
 export default function BillingPage() {
@@ -147,25 +156,53 @@ export default function BillingPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail?.message || data.detail || "Subscription order creation failed.");
 
-      // Complete payment verification (simulated or Razorpay modal)
-      const simPaymentId = getSimulatedPaymentId(planCode);
-      const verifyRes = await authFetch("/billing/verify-payment", {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({
-          razorpay_order_id: data.order_id,
-          razorpay_payment_id: simPaymentId,
-          razorpay_signature: "sig_valid_simulation",
-        }),
+      // No key_id => the gateway is not configured. Never fake a successful payment.
+      if (!data.key_id) {
+        throw new Error(
+          "Payment gateway is not configured for this deployment. Contact sales to activate billing."
+        );
+      }
+
+      const loaded = await loadRazorpayScript();
+      if (!loaded) throw new Error("Unable to load the payment gateway. Check your connection and try again.");
+
+      const w = window as unknown as { Razorpay: new (opts: Record<string, unknown>) => { open: () => void } };
+      const rzp = new w.Razorpay({
+        key: data.key_id,
+        order_id: data.order_id,
+        amount: Math.round(Number(data.amount_inr) * 100),
+        currency: data.currency || "INR",
+        name: "Rivu AI",
+        description: `Subscription — ${planCode}`,
+        handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
+          try {
+            const verifyRes = await authFetch("/billing/verify-payment", {
+              method: "POST",
+              headers: { ...authHeaders(), "Content-Type": "application/json" },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                subscription_id: data.subscription_id,
+              }),
+            });
+            const vdata = await verifyRes.json();
+            if (!verifyRes.ok) throw new Error(vdata.detail?.message || vdata.detail || "Payment verification failed.");
+            setMessage(`Successfully subscribed to ${planCode}! All entitlements and quotas updated.`);
+            await loadBillingData();
+          } catch (e: unknown) {
+            setError(e instanceof Error ? e.message : "Payment verification failed.");
+          } finally {
+            setActionLoading(false);
+          }
+        },
+        modal: { ondismiss: () => setActionLoading(false) },
+        theme: { color: "#7540d7" },
       });
-
-      if (!verifyRes.ok) throw new Error("Payment verification failed.");
-
-      setMessage(`Successfully subscribed to ${data.plan_name}! All entitlements and quotas updated.`);
-      await loadBillingData();
+      rzp.open();
+      // actionLoading stays true until the Razorpay handler or dismiss resolves.
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Subscription failed.");
-    } finally {
       setActionLoading(false);
     }
   };

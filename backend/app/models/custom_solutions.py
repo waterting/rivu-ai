@@ -66,10 +66,13 @@ class ProjectMilestone(Base):
 
 
 class Lead(Base):
-    """Internal Sales CRM for Rivu AI sales team (isolated from customer tenants)."""
+    """Sales CRM lead pipeline, scoped to the owning organization (tenant-isolated)."""
     __tablename__ = "leads"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     company_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     contact_person: Mapped[str] = mapped_column(String(150), nullable=False)
     email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)

@@ -115,14 +115,18 @@ export default function ChannelsPage() {
           channel_type: channelType,
           name: storeName,
           store_url: storeUrl,
-          access_token: accessToken || "shpat_sandbox_test_token",
+          access_token: accessToken,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail?.message || data.detail || "Connection failed.");
 
-      setMessage(`Connected to ${storeName} successfully!`);
+      setMessage(
+        data.status === "sandbox"
+          ? `Connected to ${storeName} in SANDBOX mode (no live Shopify calls).`
+          : `Connected to ${storeName} successfully!`
+      );
       setShowConnectModal(false);
       setStoreName("");
       setStoreUrl("");
@@ -138,6 +142,11 @@ export default function ChannelsPage() {
       setError("Please select a target channel connection.");
       return;
     }
+    const publishable = products.filter((p) => p.is_valid);
+    if (publishable.length === 0) {
+      setError("No valid products to publish. Fix validation errors first.");
+      return;
+    }
     setPublishing(true);
     setMessage("");
     setError("");
@@ -147,7 +156,8 @@ export default function ChannelsPage() {
         method: "POST",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({
-          channel_id: selectedChannel,
+          channel_connection_id: selectedChannel,
+          product_ids: publishable.map((p) => p.id),
           publish_as_draft: true, // Always safe: creates in draft status
         }),
       });
@@ -155,7 +165,13 @@ export default function ChannelsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail?.message || data.detail || "Publishing failed.");
 
-      setMessage(`Published ${data.synced_count} products as DRAFT to store! (Skipped: ${data.failed_count})`);
+      const results: Array<{ sku: string; status: string; error?: string }> = data.results || [];
+      const succeeded = results.filter((r) => r.status === "success").length;
+      const failed = results.filter((r) => r.status === "failed").length;
+      setMessage(
+        `Published ${succeeded} of ${data.total_requested ?? publishable.length} products as DRAFT to store!` +
+          (failed ? ` (${failed} failed)` : "")
+      );
       await loadData();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Publishing failed.");
@@ -317,14 +333,18 @@ export default function ChannelsPage() {
 
                 <div>
                   <label style={{ fontSize: 10, color: "var(--muted)" }}>
-                    Admin API Access Token (Leave empty for Sandbox test mode)
+                    Admin API Access Token (required — real Shopify custom-app token)
                   </label>
                   <input
                     type="password"
+                    required
                     placeholder="shpat_..."
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
                   />
+                  <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 4 }}>
+                    A real token is required. Sandbox/placeholder tokens are only accepted outside production.
+                  </div>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, marginTop: 12 }}>

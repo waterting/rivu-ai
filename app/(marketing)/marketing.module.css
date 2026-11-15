@@ -396,6 +396,41 @@
 .section { padding: 92px 0; }
 .sectionAlt { background: var(--surface-alt); }
 .sectionLav { background: var(--lavender-soft); }
+
+/* Explore the Workspace — large closing CTA card at the very bottom of the
+   homepage, after all marketing sections. */
+.exploreCard {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  padding: 72px 56px;
+  background: var(--black);
+  color: #fff;
+  isolation: isolate;
+}
+.exploreCard::before {
+  content: "";
+  position: absolute;
+  inset: -40% 40% auto auto;
+  width: 480px;
+  height: 480px;
+  background: radial-gradient(circle, rgba(117, 64, 215, 0.55), transparent 70%);
+  z-index: 0;
+  pointer-events: none;
+}
+.exploreInner { position: relative; z-index: 2; max-width: 640px; }
+.exploreTitle {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
+  font-size: clamp(34px, 4.6vw, 56px);
+  margin: 14px 0 0;
+}
+.exploreTitle em { font-style: normal; color: #b794f6; }
+.exploreLead { font-size: 17px; line-height: 1.65; color: #c9c4d6; margin: 20px 0 0; max-width: 540px; }
+.exploreRow { display: flex; gap: 12px; margin-top: 30px; flex-wrap: wrap; }
+@media (max-width: 720px) { .exploreCard { padding: 44px 24px; } }
 .sectionHead { max-width: 720px; margin-bottom: 52px; }
 .sectionHead.center { margin-left: auto; margin-right: auto; text-align: center; }
 .sectionHead h2 {

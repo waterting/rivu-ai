@@ -125,8 +125,9 @@ async def list_leads(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """Internal Sales CRM: List leads and pipeline opportunities."""
-    stmt = select(Lead).order_by(Lead.created_at.desc())
+    """Sales CRM: List leads and pipeline opportunities for the current organization."""
+    org_id = current_user.active_org_id
+    stmt = select(Lead).where(Lead.organization_id == org_id).order_by(Lead.created_at.desc())
     if stage:
         stmt = stmt.where(Lead.pipeline_stage == stage)
     res = await db.execute(stmt)
@@ -156,8 +157,10 @@ async def create_lead(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """Add a lead or prospective client to the internal CRM pipeline."""
+    """Add a lead to the current organization's CRM pipeline."""
+    org_id = current_user.active_org_id
     lead = Lead(
+        organization_id=org_id,
         company_name=body.company_name,
         contact_person=body.contact_person,
         email=body.email,

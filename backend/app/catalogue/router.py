@@ -267,13 +267,18 @@ async def delete_template(
     if template_id in ("standard_ecommerce", "shopify", "woocommerce", "erp_inventory"):
         raise HTTPException(status_code=400, detail={"message": "Built-in templates cannot be deleted"})
 
+    # A custom template may exist in the in-memory store, the database, or both
+    # (dual-write). Delete from both and succeed if it existed in either — never
+    # 404 just because the DB rowcount is zero for a memory-only template.
+    removed_from_memory = delete_custom_template(org_id, template_id)
     result = await db.execute(delete(CatalogueSavedTemplate).where(
         CatalogueSavedTemplate.workspace_id == membership.organization_id,
         CatalogueSavedTemplate.template_id == template_id,
     ))
-    delete_custom_template(org_id, template_id)
-    if not result.rowcount:
+    removed_from_db = bool(result.rowcount)
+    if not (removed_from_memory or removed_from_db):
         raise HTTPException(status_code=404, detail={"message": "Template not found"})
+    await db.commit()
     return {"status": "deleted", "template_id": template_id}
 
 

@@ -17,6 +17,7 @@ from app.schemas.billing import (
     InvoiceResponse
 )
 from app.core.razorpay import RazorpayService
+from app.core.config import settings
 from app.core.entitlements import get_or_create_default_subscription
 
 router = APIRouter()
@@ -237,7 +238,7 @@ async def create_subscription_order(
         customer_email=current_user.email,
         customer_gstin=body.customer_gstin,
         customer_address=body.customer_address,
-        provider_gstin="27AABCU9603R1ZM", # Verified placeholder format for Rivu AI billing
+        provider_gstin=(settings.BUSINESS_GSTIN or "").strip(),
         subtotal_inr=subtotal,
         cgst_inr=cgst,
         sgst_inr=sgst,
