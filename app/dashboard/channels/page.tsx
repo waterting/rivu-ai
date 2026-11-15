@@ -181,36 +181,7 @@ export default function ChannelsPage() {
   };
 
   return (
-    <main className={styles.app}>
-      <CursorField />
-      <aside className={styles.sidebar}>
-        <div className={styles.brandWrap}>
-          <BrandLogo href="/" className={styles.brand} />
-        </div>
-        <nav>
-          <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 11px", color: "#7f8996", textDecoration: "none", fontSize: 12 }}>
-            <ArrowLeft size={16} /> Back to Workspace
-          </Link>
-          <a className={styles.active} href="#channels">
-            <ShoppingBag size={16} /> Channels & Shopify
-          </a>
-          <a href="/our-solutions/catalogue-data-entry">
-            <ArrowUpRight size={16} /> Catalogue PIM Studio
-          </a>
-          <a href="/dashboard/billing">
-            <ShieldCheck size={16} /> Subscriptions & Billing
-          </a>
-        </nav>
-      </aside>
-
-      <section className={styles.main}>
-        <header className={styles.topbar}>
-          <div>
-            <div className={styles.eyebrow}>RIVU / MULTI-CHANNEL DISTRIBUTION</div>
-            <h1>Commerce Channels & Shopify</h1>
-            <p>Publish verified canonical catalogues directly to Shopify Admin GraphQL API as draft products.</p>
-          </div>
-          <div className={styles.headerActions}>
+    <div>
             <button className={styles.iconBtn} onClick={loadData}>
               <RefreshCw size={15} /> Refresh
             </button>
@@ -361,5 +332,7 @@ export default function ChannelsPage() {
         )}
       </section>
     </main>
+  );
+    </div>
   );
 }

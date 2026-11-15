@@ -117,34 +117,7 @@ export default function SuppliersPage() {
   };
 
   return (
-    <main className={styles.app}>
-      <CursorField />
-      <aside className={styles.sidebar}>
-        <div className={styles.brandWrap}>
-          <BrandLogo href="/" className={styles.brand} />
-        </div>
-        <nav>
-          <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 11px", color: "#7f8996", textDecoration: "none", fontSize: 12 }}>
-            <ArrowLeft size={16} /> Back to Workspace
-          </Link>
-          <a className={styles.active} href="#suppliers">
-            <Users size={16} /> Suppliers Directory
-          </a>
-          <a href="/our-solutions/catalogue-data-entry">
-            <FileSpreadsheet size={16} /> Catalogue Studio
-          </a>
-          <a href="/dashboard/channels">
-            <FileText size={16} /> Channels & Shopify
-          </a>
-          <a href="/dashboard/billing">
-            <ShieldCheck size={16} /> Subscriptions & Billing
-          </a>
-        </nav>
-      </aside>
-
-      <section className={styles.main}>
-        <header className={styles.topbar}>
-          <div>
+    <div>
             <div className={styles.eyebrow}>RIVU / SUPPLIER NETWORK OPERATIONS</div>
             <h1>Supplier Directory & Ingestion</h1>
             <p>Manage vendors, manufacturers, and IndiaMART sellers with learned mapping recipes.</p>
@@ -276,5 +249,7 @@ export default function SuppliersPage() {
         )}
       </section>
     </main>
+  );
+    </div>
   );
 }

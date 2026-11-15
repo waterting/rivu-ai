@@ -208,37 +208,8 @@ export default function BillingPage() {
   };
 
   return (
-    <main className={styles.app}>
-      <CursorField />
-      <aside className={styles.sidebar}>
-        <div className={styles.brandWrap}>
-          <BrandLogo href="/" className={styles.brand} />
-        </div>
-        <nav>
-          <Link href="/dashboard" style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 11px", color: "#7f8996", textDecoration: "none", fontSize: 12 }}>
-            <ArrowLeft size={16} /> Back to Workspace
-          </Link>
-          <a className={styles.active} href="#plans">
-            <CreditCard size={16} /> Plans & Subscriptions
-          </a>
-          <a href="#usage">
-            <Zap size={16} /> Usage Metering
-          </a>
-          <a href="#invoices">
-            <ShieldCheck size={16} /> GST Invoices
-          </a>
-        </nav>
-        <div className={styles.sideFoot}>
-          <div className={styles.secure}>
-            <ShieldCheck size={14} /> 256-bit Encrypted Billing
-          </div>
-        </div>
-      </aside>
-
-      <section className={styles.main}>
-        <header className={styles.topbar}>
-          <div>
-            <div className={styles.eyebrow}>RIVU / SUBSCRIPTION & REVENUE ENGINE</div>
+  return (
+    <div>
             <h1>Commercial Operations & Billing</h1>
             <p>Transparent SaaS subscriptions starting at ₹4,999/month up to enterprise data pipelines.</p>
           </div>
@@ -398,5 +369,7 @@ export default function BillingPage() {
         </section>
       </section>
     </main>
+  );
+</div>
   );
 }
