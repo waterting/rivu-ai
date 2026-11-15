@@ -88,6 +88,7 @@ class TransformationRun(Base):
     operations_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     operations_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     rows_modified: Mapped[int | None] = mapped_column(Integer)
+    cells_changed: Mapped[int | None] = mapped_column(Integer)
     quality_before: Mapped[float | None] = mapped_column(Numeric(5, 2))
     quality_after: Mapped[float | None] = mapped_column(Numeric(5, 2))
     quality_delta: Mapped[float | None] = mapped_column(Numeric(5, 2))

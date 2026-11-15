@@ -158,7 +158,10 @@ def profile_dataframe(
     stored profile and the coerced dataframe always agree.
     """
     start = time.perf_counter()
-    schema_by_name = {entry["column_name"]: entry for entry in (schemas or [])}
+    schema_by_name: dict[str, dict] = {}
+    for entry in schemas or []:
+        record = entry.as_record() if hasattr(entry, "as_record") else entry
+        schema_by_name[record["column_name"]] = record
 
     # Sample if very large
     if df.height > sample_limit:

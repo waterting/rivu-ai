@@ -395,6 +395,7 @@ CREATE TABLE transformation_runs (
   operations_skipped    INTEGER NOT NULL DEFAULT 0,
   operations_failed     INTEGER NOT NULL DEFAULT 0,
   rows_modified         INTEGER,
+  cells_changed         INTEGER,
   quality_before        NUMERIC(5,2),
   quality_after         NUMERIC(5,2),
   quality_delta         NUMERIC(5,2),

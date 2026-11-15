@@ -45,15 +45,23 @@ def upgrade() -> None:
     if not _has_column(bind, "quality_issues", "resolution_note"):
         op.add_column("quality_issues", sa.Column("resolution_note", sa.Text(), nullable=True))
 
+    if sa.inspect(bind).has_table("transformation_runs") and not _has_column(
+        bind, "transformation_runs", "cells_changed"
+    ):
+        op.add_column("transformation_runs", sa.Column("cells_changed", sa.Integer(), nullable=True))
+
 
 def downgrade() -> None:
     bind = op.get_bind()
-    if not sa.inspect(bind).has_table("quality_issues"):
-        return
+    if sa.inspect(bind).has_table("quality_issues"):
+        for column in ("resolution_note", "resolved_at", "status", "category", "issue_id"):
+            if _has_column(bind, "quality_issues", column):
+                op.drop_column("quality_issues", column)
 
-    for column in ("resolution_note", "resolved_at", "status", "category", "issue_id"):
-        if _has_column(bind, "quality_issues", column):
-            op.drop_column("quality_issues", column)
+        for index in ("ix_quality_issues_status", "ix_quality_issues_issue_id"):
+            op.execute(sa.text(f"DROP INDEX IF EXISTS {index}"))
 
-    for index in ("ix_quality_issues_status", "ix_quality_issues_issue_id"):
-        op.execute(sa.text(f"DROP INDEX IF EXISTS {index}"))
+    if sa.inspect(bind).has_table("transformation_runs") and _has_column(
+        bind, "transformation_runs", "cells_changed"
+    ):
+        op.drop_column("transformation_runs", "cells_changed")

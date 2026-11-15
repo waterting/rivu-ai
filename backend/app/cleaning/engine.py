@@ -34,6 +34,9 @@ TARGET_DATE_FORMAT = "%Y-%m-%d"
 TARGET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 
+_NULL_SENTINEL = "<rivu-null>"
+
+
 class TransformationEngine:
     """
     Executes a list of transformation operations on a Polars DataFrame.
@@ -51,36 +54,60 @@ class TransformationEngine:
             "normalize_email", "normalize_category",
         }
 
+    def _diff(self, before: pl.DataFrame, column: str | None) -> dict:
+        """Measure what one operation actually changed."""
+        after = self._df
+        info = {
+            "changed_rows": 0,
+            "changed_cells": 0,
+            "rows_removed": max(0, before.height - after.height),
+            "rows_added": max(0, after.height - before.height),
+        }
+        if column and column in before.columns and column in after.columns and before.height == after.height:
+            before_values = before[column].cast(pl.Utf8).fill_null(_NULL_SENTINEL)
+            after_values = after[column].cast(pl.Utf8).fill_null(_NULL_SENTINEL)
+            changed = int((before_values != after_values).sum())
+            info["changed_cells"] = changed
+            info["changed_rows"] = changed
+        return info
+
     def execute_operations(self, operations: list[dict]) -> dict:
         """
         Execute all approved operations and return results.
-        Returns: {df, log, rows_modified, ops_applied, ops_skipped, ops_failed}
+        Returns: {df, log, rows_modified, cells_changed, ops_applied, ops_skipped, ops_failed}
         """
         start = time.perf_counter()
         ops_applied = 0
         ops_skipped = 0
         ops_failed = 0
+        rows_modified = 0
+        cells_changed = 0
 
         for op in operations:
             op_type = op.get("type", "")
             column = op.get("column")
             params = op.get("parameters") or {}
+            before = self._df
 
             try:
                 result = self._execute_single(op_type, column, params, op)
+                diff = self._diff(before, column)
+                rows_modified += diff["changed_rows"] + diff["rows_removed"]
+                cells_changed += diff["changed_cells"]
                 if result.get("applied"):
                     ops_applied += 1
                     if column:
                         self._modified_columns.add(column)
                 else:
                     ops_skipped += 1
-                self._log.append({**result, "op": op_type, "column": column, "status": "ok"})
+                self._log.append({**result, **diff, "op": op_type, "column": column, "status": "ok"})
             except Exception as e:
                 ops_failed += 1
                 logger.error("transform_op_failed", op=op_type, col=column, error=str(e))
                 self._log.append({
                     "op": op_type, "column": column, "status": "failed",
-                    "error": str(e), "applied": False
+                    "error": str(e), "applied": False,
+                    "changed_rows": 0, "changed_cells": 0, "rows_removed": 0, "rows_added": 0,
                 })
 
         self._restore_safe_schema()
@@ -93,7 +120,8 @@ class TransformationEngine:
         return {
             "df": self._df,
             "log": self._log,
-            "rows_modified": len(self._df),
+            "rows_modified": rows_modified,
+            "cells_changed": cells_changed,
             "ops_applied": ops_applied,
             "ops_skipped": ops_skipped,
             "ops_failed": ops_failed,
@@ -477,6 +505,50 @@ def _normalize_phone_value(value: str | None) -> str | None:
     return cleaned
 
 
+OPERATION_RULES = {
+    "trim_whitespace": "Strip leading and trailing whitespace",
+    "normalize_whitespace": "Collapse repeated spaces and trim",
+    "lowercase": "Convert text to lowercase",
+    "uppercase": "Convert text to uppercase",
+    "title_case": "Convert text to title case",
+    "standardize_date": "Rewrite dates as ISO YYYY-MM-DD",
+    "standardize_datetime": "Rewrite timestamps as ISO 8601",
+    "coerce_numeric": "Convert numeric text to numbers",
+    "coerce_boolean": "Convert yes/no/1/0 text to booleans",
+    "normalize_currency": "Rewrite amounts as plain decimals",
+    "normalize_phone": "Rewrite phone numbers to E.164",
+    "normalize_email": "Trim and lowercase email addresses",
+    "normalize_category": "Standardise category spelling and case",
+    "fill_null": "Replace missing values with a chosen value",
+    "drop_nulls": "Remove rows with missing values in the column",
+    "remove_duplicates": "Remove repeated rows",
+    "flag_duplicates": "Add a column marking repeated rows",
+    "flag_outliers": "Add a column marking statistical outliers",
+    "replace_value": "Replace one value with another",
+    "regex_replace": "Replace values matching a pattern",
+    "clip_numeric": "Cap values to a configured range",
+    "drop_column": "Remove the column from the dataset",
+    "rename_column": "Rename the column",
+}
+
+HIGH_RISK_OPERATIONS = {
+    "drop_column", "remove_duplicates", "drop_nulls", "fill_null", "clip_numeric",
+}
+MEDIUM_RISK_OPERATIONS = {
+    "standardize_date", "standardize_datetime", "coerce_numeric", "coerce_boolean",
+    "normalize_currency", "normalize_phone", "normalize_email", "normalize_category",
+    "replace_value", "regex_replace",
+}
+
+
+def _risk_for(op_type: str) -> str:
+    if op_type in HIGH_RISK_OPERATIONS:
+        return "high"
+    if op_type in MEDIUM_RISK_OPERATIONS:
+        return "medium"
+    return "low"
+
+
 def generate_transformation_preview(
     df: pl.DataFrame,
     operations: list[dict],
@@ -484,45 +556,102 @@ def generate_transformation_preview(
 ) -> list[dict]:
     """
     Generate before/after preview for each operation without modifying the original.
-    Returns list of preview dicts.
+
+    Each preview reports the operation's rule, how many rows and cells it would
+    change, the affected columns, its risk level and representative samples so a
+    user can approve or reject it with evidence.
     """
     previews = []
     for op in operations:
+        op_type = op.get("type", "")
         col = op.get("column")
+        base = {
+            "op": op_type,
+            "rule": OPERATION_RULES.get(op_type, "Custom operation"),
+            "risk": _risk_for(op_type),
+            "column": col,
+            "affected_columns": [col] if col else [],
+            "parameters": op.get("parameters") or {},
+            "reason": op.get("reason", ""),
+            "confidence": op.get("confidence", 0.8),
+        }
+
         if not col or col not in df.columns:
             previews.append({
-                "op": op["type"],
-                "column": col,
+                **base,
                 "before": [],
                 "after": [],
+                "samples": [],
+                "changed_rows": 0,
+                "changed_cells": 0,
+                "rows_removed": 0,
+                "changed": False,
                 "preview_available": False,
+                "note": "Column not found in this version",
             })
             continue
 
-        # Get sample values
-        sample = df[col].drop_nulls().head(preview_rows)
-        before_vals = [str(v) if v is not None else None for v in sample.to_list()]
-
-        # Apply just this one operation to generate preview
+        before_series = df[col].cast(pl.Utf8).fill_null(_NULL_SENTINEL)
         try:
-            engine = TransformationEngine(df.head(preview_rows))
-            result = engine.execute_operations([op])
-            preview_df = result["df"]
-            if col in preview_df.columns:
-                after_vals = [str(v) if v is not None else None for v in preview_df[col].to_list()]
+            result = TransformationEngine(df).execute_operations([op])
+            output = result["df"]
+            entry = result["log"][0] if result["log"] else {}
+            if col in output.columns:
+                after_series = output[col].cast(pl.Utf8).fill_null(_NULL_SENTINEL)
+                changed_rows = entry.get("changed_rows", 0) or 0
             else:
-                after_vals = before_vals
-        except Exception:
-            after_vals = before_vals
+                after_series = None
+                changed_rows = int(before_series.is_not_null().sum()) if op_type == "drop_column" else 0
+        except Exception as error:
+            previews.append({
+                **base,
+                "before": [],
+                "after": [],
+                "samples": [],
+                "changed_rows": 0,
+                "changed_cells": 0,
+                "rows_removed": 0,
+                "changed": False,
+                "preview_available": False,
+                "note": f"Preview failed: {error}",
+            })
+            continue
+
+        samples: list[dict[str, Any]] = []
+        if after_series is not None and len(before_series) == len(after_series):
+            difference = (before_series != after_series)
+            changed_indices = [i for i, flag in enumerate(difference.to_list()) if flag]
+            for index in changed_indices[:preview_rows]:
+                samples.append({
+                    "row": index,
+                    "before": None if before_series[index] == _NULL_SENTINEL else before_series[index],
+                    "after": None if after_series[index] == _NULL_SENTINEL else after_series[index],
+                })
+            if not changed_indices:
+                for index in range(min(preview_rows, len(before_series))):
+                    samples.append({
+                        "row": index,
+                        "before": None if before_series[index] == _NULL_SENTINEL else before_series[index],
+                        "after": None if after_series[index] == _NULL_SENTINEL else after_series[index],
+                    })
+        elif after_series is None:
+            for index in range(min(preview_rows, len(before_series))):
+                value = before_series[index]
+                samples.append({
+                    "row": index,
+                    "before": None if value == _NULL_SENTINEL else value,
+                    "after": None,
+                })
 
         previews.append({
-            "op": op["type"],
-            "column": col,
-            "confidence": op.get("confidence", 0.8),
-            "reason": op.get("reason", ""),
-            "before": before_vals,
-            "after": after_vals,
-            "changed": before_vals != after_vals,
+            **base,
+            "before": [sample["before"] for sample in samples],
+            "after": [sample["after"] for sample in samples],
+            "samples": samples,
+            "changed_rows": changed_rows,
+            "changed_cells": entry.get("changed_cells", changed_rows) or 0,
+            "rows_removed": entry.get("rows_removed", 0) or 0,
+            "changed": bool(changed_rows) or bool(entry.get("rows_removed")),
             "preview_available": True,
         })
 

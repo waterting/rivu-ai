@@ -120,6 +120,127 @@ async def approve_plan(
     await db.commit()
     return {"plan_id": str(plan.id), "status": plan.status, "approved_at": plan.approved_at.isoformat()}
 
+@router.get("/{dataset_id}/transform-history")
+async def transform_history(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Audit trail of every approved transformation run for this dataset.
+
+    Each entry records the operation, the source and result versions, how many
+    rows and cells changed and the measured quality movement, so a run can be
+    explained or reverted to an earlier approved version.
+    """
+    ds, _, org = await _dataset(dataset_id, current_user, db)
+
+    versions = (await db.execute(
+        select(DatasetVersion).where(DatasetVersion.data_source_id == ds.id)
+        .order_by(DatasetVersion.version_number)
+    )).scalars().all()
+    version_ids = [version.id for version in versions]
+    version_by_id = {version.id: version for version in versions}
+
+    runs = (await db.execute(
+        select(TransformationRun)
+        .where(
+            TransformationRun.organization_id == org,
+            TransformationRun.dataset_version_id.in_(version_ids),
+        )
+        .order_by(TransformationRun.started_at)
+    )).scalars().all()
+
+    return {
+        "dataset_id": str(ds.id),
+        "current_version": ds.current_version,
+        "versions": [{
+            "id": str(version.id),
+            "number": version.version_number,
+            "label": version.version_label,
+            "parent_version": version_by_id[version.parent_version_id].version_number
+            if version.parent_version_id in version_by_id else None,
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "quality_score": float(version.quality_score) if version.quality_score is not None else None,
+            "quality_delta": float(version.quality_delta) if version.quality_delta is not None else None,
+            "created_at": version.created_at.isoformat() if version.created_at else None,
+        } for version in versions],
+        "runs": [{
+            "id": str(run.id),
+            "status": run.status,
+            "plan_id": str(run.transformation_plan_id),
+            "source_version": version_by_id[run.dataset_version_id].version_number
+            if run.dataset_version_id in version_by_id else None,
+            "result_version": version_by_id[run.output_version_id].version_number
+            if run.output_version_id in version_by_id else None,
+            "operations_total": run.operations_total,
+            "operations_applied": run.operations_applied,
+            "operations_skipped": run.operations_skipped,
+            "operations_failed": run.operations_failed,
+            "rows_modified": run.rows_modified,
+            "cells_changed": run.cells_changed,
+            "quality_before": float(run.quality_before) if run.quality_before is not None else None,
+            "quality_after": float(run.quality_after) if run.quality_after is not None else None,
+            "quality_delta": float(run.quality_delta) if run.quality_delta is not None else None,
+            "duration_ms": run.duration_ms,
+            "executed_by": str(run.executed_by),
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "operations": [
+                {
+                    "op": entry.get("op"),
+                    "column": entry.get("column"),
+                    "status": entry.get("status"),
+                    "changed_rows": entry.get("changed_rows"),
+                    "changed_cells": entry.get("changed_cells"),
+                    "rows_removed": entry.get("rows_removed"),
+                    "message": entry.get("message"),
+                }
+                for entry in (run.execution_log or [])
+            ],
+        } for run in runs],
+    }
+
+
+@router.post("/{dataset_id}/versions/{version_number}/activate")
+async def activate_version(
+    dataset_id: UUID,
+    version_number: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Make an existing approved version the current one.
+
+    Versions are immutable, so this never rewrites data: it points the dataset
+    at an earlier version and leaves every version available for later use.
+    """
+    ds, _, _ = await _dataset(dataset_id, current_user, db)
+    await require_org_role(current_user, db, {"owner", "admin", "editor"})
+
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id,
+        DatasetVersion.version_number == version_number,
+        DatasetVersion.organization_id == ds.organization_id,
+    ))).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    ds.current_version = version_number
+    await db.commit()
+
+    return {
+        "dataset_id": str(ds.id),
+        "current_version": version_number,
+        "version": {
+            "id": str(version.id),
+            "label": version.version_label,
+            "row_count": version.row_count,
+            "column_count": version.column_count,
+            "quality_score": float(version.quality_score) if version.quality_score is not None else None,
+        },
+    }
+
+
 @router.post("/{dataset_id}/transform/execute", status_code=201)
 async def execute_plan(
     dataset_id: UUID,
@@ -163,8 +284,19 @@ async def execute_plan(
     db.add(run)
     await db.flush()
 
+    source_report = (await db.execute(
+        select(QualityReport).where(QualityReport.dataset_version_id == source_version.id)
+    )).scalar_one_or_none()
+
     result = TransformationEngine(df).execute_operations(operations)
     output_df: pl.DataFrame = result["df"]
+
+    # Re-apply the same deterministic schema inference used at ingestion so the
+    # refined version is profiled and scored exactly like its source version.
+    from app.profiler.schema import apply_schema, schema_records
+
+    output_df, output_schemas = apply_schema(output_df)
+    output_schema_records = schema_records(output_schemas)
 
     # Write a new immutable version; never overwrite the raw/source version.
     next_version = source_version.version_number + 1
@@ -235,7 +367,7 @@ async def execute_plan(
     await db.flush()
 
     # Re-profile and re-score the refined output for trustworthy version history.
-    profile_data = profile_dataframe(output_df, str(org))
+    profile_data = profile_dataframe(output_df, str(org), schemas=output_schema_records)
     new_profile = DataProfile(
         dataset_version_id=new_version.id, organization_id=org,
         row_count=profile_data["row_count"], column_count=profile_data["column_count"],
@@ -268,7 +400,25 @@ async def execute_plan(
             value_frequency=col_data.get("value_frequency"), sample_values=col_data.get("sample_values"),
         ))
 
-    quality_data = calculate_quality_report(profile_data, profile_data["columns"])
+    from app.profiler.duplicates import detect_duplicates
+
+    duplicate_keys = [
+        column["column_name"]
+        for column in profile_data["columns"]
+        if column.get("role") in {"sku", "barcode", "order_id"}
+    ]
+    fuzzy_columns = [
+        column["column_name"]
+        for column in profile_data["columns"]
+        if column.get("role") == "product_name"
+    ]
+    duplicates = detect_duplicates(output_df, key_columns=duplicate_keys, fuzzy_columns=fuzzy_columns)
+    quality_data = calculate_quality_report(
+        profile_data,
+        profile_data["columns"],
+        duplicates=duplicates,
+        row_count=output_df.height,
+    )
     new_quality = QualityReport(
         dataset_version_id=new_version.id, organization_id=org,
         overall_score=quality_data["overall_score"],
@@ -294,6 +444,7 @@ async def execute_plan(
             affected_row_count=issue.get("affected_row_count"),
             affected_row_pct=issue.get("affected_row_pct"), evidence=issue.get("evidence"),
             suggested_fix=issue.get("suggested_fix"), auto_fixable=issue.get("auto_fixable", False),
+            issue_id=issue.get("issue_id"), category=issue.get("category"), status="open",
         ))
     new_version.quality_score = quality_data["overall_score"]
     new_version.quality_delta = float(quality_data["overall_score"]) - float(source_version.quality_score or 0)
@@ -308,7 +459,8 @@ async def execute_plan(
     run.operations_applied = result["ops_applied"]
     run.operations_skipped = result["ops_skipped"]
     run.operations_failed = result["ops_failed"]
-    run.rows_modified = output_df.height
+    run.rows_modified = result["rows_modified"]
+    run.cells_changed = result["cells_changed"]
     run.execution_log = result["log"]
     run.completed_at = datetime.now(timezone.utc)
     run.duration_ms = result["duration_ms"]
@@ -321,9 +473,15 @@ async def execute_plan(
         "message": "Transformation executed and a new immutable dataset version was created.",
         "run": {"id": str(run.id), "status": run.status, "applied": run.operations_applied,
                 "skipped": run.operations_skipped, "failed": run.operations_failed,
+                "rows_modified": run.rows_modified, "cells_changed": run.cells_changed,
                 "duration_ms": run.duration_ms},
         "version": {"id": str(new_version.id), "number": next_version,
                     "format": output_format, "rows": output_df.height, "columns": output_df.width},
+        "quality": {"before": float(source_version.quality_score or 0),
+                    "after": float(quality_data["overall_score"]),
+                    "delta": float(new_version.quality_delta or 0),
+                    "issues_before": source_report.total_issues if source_report else None,
+                    "issues_after": quality_data["total_issues"]},
         "artifacts": artifacts,
         "schema": schema_payload,
     }
