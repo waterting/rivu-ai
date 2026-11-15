@@ -5,21 +5,42 @@ Run as a separate Render background worker:
 PostgreSQL row locks ensure only one worker claims a queued job at a time.
 """
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core import database
 from app.core.database import close_db, init_db
 from app.models.dataset import DataSource
 from app.models.quality import Job
+from app.observability.metrics import (
+    job_duration_seconds,
+    job_failures_total,
+    jobs_pending,
+    jobs_total,
+)
 from app.workers.processor import process_dataset_async
 
 logger = structlog.get_logger(__name__)
 POLL_SECONDS = 2
 STALE_JOB_MINUTES = 120
+
+# Mirrors the job_type enum; reported so a drained queue reads 0 instead of
+# keeping the last observed depth.
+JOB_TYPES = ("profile", "quality_analysis", "ai_analysis", "transformation", "validation", "export")
+
+
+async def _refresh_queue_depth(db) -> None:
+    """Publish per-type queue depth so a stalled pipeline is visible."""
+    result = await db.execute(
+        select(Job.job_type, func.count()).where(Job.status == "queued").group_by(Job.job_type)
+    )
+    counts = {job_type: int(count) for job_type, count in result.all()}
+    for job_type in JOB_TYPES:
+        jobs_pending.set(counts.get(job_type, 0), job_type=job_type)
 
 
 async def _recover_stale_jobs(db) -> None:
@@ -66,8 +87,10 @@ async def _claim_one_job():
         job.progress_pct = max(job.progress_pct or 0, 1)
         job.progress_message = "Worker claimed job"
         await db.commit()
+        jobs_total.inc(job_type=job.job_type, status="processing")
         return {
             "job_id": str(job.id),
+            "job_type": job.job_type,
             "version_id": str(job.dataset_version_id),
             "data_source_id": str(job.data_source_id),
             "org_id": str(job.organization_id),
@@ -118,6 +141,7 @@ async def run_worker() -> None:
             try:
                 async with database._session_factory() as db:
                     await _recover_stale_jobs(db)
+                    await _refresh_queue_depth(db)
                 claim = await _claim_one_job()
             except Exception as exc:
                 # The API service applies Alembic migrations during deployment. If
@@ -128,8 +152,10 @@ async def run_worker() -> None:
             if claim is None:
                 await asyncio.sleep(POLL_SECONDS)
                 continue
+            started = time.perf_counter()
             try:
                 await _process_claim(claim)
+                jobs_total.inc(job_type=claim["job_type"], status="completed")
             except Exception as exc:
                 logger.exception("worker_job_unhandled_error", job_id=claim["job_id"], error=str(exc))
                 async with database._session_factory() as db:
@@ -139,7 +165,14 @@ async def run_worker() -> None:
                         job.status = "failed" if job.attempts >= job.max_attempts else "queued"
                         job.error_message = str(exc)[:2000]
                         job.completed_at = datetime.now(timezone.utc) if job.status == "failed" else None
+                        if job.status == "failed":
+                            job_failures_total.inc(job_type=job.job_type)
+                        jobs_total.inc(job_type=job.job_type, status=job.status)
                         await db.commit()
+            else:
+                job_duration_seconds.observe(
+                    time.perf_counter() - started, job_type=claim["job_type"]
+                )
     finally:
         await close_db()
 

@@ -14,6 +14,12 @@ from app.core.database import close_db, init_db
 from app.core.logging import configure_logging
 from app.api.v1.router import api_router
 from app.catalogue.auth_db import close_catalogue_db, init_catalogue_db
+from app.observability.metrics import (
+    http_errors_total,
+    http_request_duration_seconds,
+    http_requests_total,
+    registry,
+)
 
 configure_logging()
 logger = structlog.get_logger(__name__)
@@ -71,6 +77,14 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     response.headers["Cache-Control"] = "no-store" if request.url.path.startswith("/api/") else "public, max-age=60"
     duration_ms = (time.perf_counter() - start) * 1000
+    route = request.scope.get("route")
+    route_template = getattr(route, "path", None) or request.url.path
+    http_requests_total.inc(method=request.method, route=route_template, status=response.status_code)
+    http_request_duration_seconds.observe(
+        duration_ms / 1000.0, method=request.method, route=route_template
+    )
+    if response.status_code >= 500:
+        http_errors_total.inc(method=request.method, route=route_template)
     logger.info(
         "http_request",
         method=request.method,
@@ -105,6 +119,18 @@ async def health_check():
         "version": settings.APP_VERSION,
         "environment": settings.APP_ENV,
     }
+
+
+@app.get("/metrics", tags=["health"], include_in_schema=False)
+async def metrics():
+    """Prometheus scrape endpoint.
+
+    Exposes aggregate counts only: route templates, job types and status
+    classes. No user data, tenant identifiers or request contents appear here.
+    """
+    from fastapi.responses import PlainTextResponse
+
+    return PlainTextResponse(registry.render(), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/", tags=["root"])
