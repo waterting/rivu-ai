@@ -57,7 +57,7 @@ export default function HomePage() {
                 <Link href="/platform" className={`${styles.btn} ${styles.btnPrimary}`}>
                   Explore Rivu <ArrowRight />
                 </Link>
-                <Link href="/contact" className={`${styles.btn} ${styles.btnGhost}`}>
+                <Link href="/contact" className={`${styles.btn} ${styles.btnPrimary}`}>
                   Book a Demo
                 </Link>
               </div>

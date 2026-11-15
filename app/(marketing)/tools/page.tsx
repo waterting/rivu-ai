@@ -57,7 +57,7 @@ export default function ToolsPage() {
         lead="Each tool has its own workspace, input controls, processing logic, results, history and export. These are working utilities inside the Rivu workspace — not decorative cards."
       >
         <Link href="/signup" className={`${styles.btn} ${styles.btnPrimary}`}>Open the Tools Centre <ArrowRight /></Link>
-        <Link href="/contact" className={`${styles.btn} ${styles.btnGhost}`}>Book a Demo</Link>
+        <Link href="/contact" className={`${styles.btn} ${styles.btnPrimary}`}>Book a Demo</Link>
       </PageHero>
 
       <section className={styles.section}>

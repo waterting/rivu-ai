@@ -73,7 +73,10 @@ export function CTAPanel({
             <Link href={primary.href} className={`${styles.btn} ${styles.btnViolet}`}>
               {primary.label} <ArrowRight />
             </Link>
-            <Link href={secondary.href} className={`${styles.btn} ${styles.btnLight}`}>
+            <Link
+              href={secondary.href}
+              className={`${styles.btn} ${secondary.label === "Book a Demo" ? styles.btnOnDark : styles.btnLight}`}
+            >
               {secondary.label}
             </Link>
           </div>
