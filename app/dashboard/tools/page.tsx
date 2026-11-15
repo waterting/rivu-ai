@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { FileJson, Table2, Wand2, Sparkles, CopyCheck, FileCheck2, Boxes, ScanBarcode, Images, GitCompare, Download, Gauge, Workflow, ArrowUpRight } from "lucide-react";
@@ -22,11 +22,14 @@ const TOOLS = [
   { id: "transformation-builder", name: "Custom Transformation Builder", icon: Workflow, status: "live", desc: "Build allowlisted transformation plans (23 deterministic ops).", href: "/dashboard/refinery" },
 ];
 
-export default function ToolsCentrePage() {
+function ToolsCentreInner() {
   const search = useSearchParams();
   const focus = search.get("tool");
-  const [active, setActive] = useState<string | null>(focus);
-  useEffect(() => { if (focus) { setActive(focus); document.getElementById(focus)?.scrollIntoView({behavior:"smooth",block:"center"}); } }, [focus]);
+  const active = focus;
+  useEffect(() => {
+    if (!focus) return;
+    document.getElementById(focus)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focus]);
 
   return (
     <div>
@@ -52,5 +55,12 @@ export default function ToolsCentrePage() {
         <p>Every run is traceable: job IDs, input/output references, configuration snapshot, status, logs and timestamps are stored (Job/JobLog). Tools that are not yet automated are marked PLANNED — never presented as a fake success.</p>
       </section>
     </div>
+  );
+}
+export default function ToolsCentrePage() {
+  return (
+    <Suspense fallback={<div className={styles.muted}>Loading tools...</div>}>
+      <ToolsCentreInner />
+    </Suspense>
   );
 }

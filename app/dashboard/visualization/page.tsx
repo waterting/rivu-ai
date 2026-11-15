@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import styles from "../dashboard.module.css";
 import { authFetch } from "../../../lib/api";
@@ -8,11 +8,15 @@ const authHeaders=()=>({Authorization:"Bearer "+(typeof window!=="undefined"?loc
 
 export default function VisualizationPage() {
   const [products,setProducts]=useState<any[]>([]); const [err,setErr]=useState(""); const [loading,setLoading]=useState(true);
-  async function load(){
+  const load = useCallback(async()=>{
     setLoading(true); setErr("");
     try{const r=await authFetch("/commerce/products?limit=50",{headers:authHeaders()}); const j=await r.json().catch(()=>[]); if(!r.ok) throw new Error(j.detail?.message||j.detail||"Could not load products"); setProducts(Array.isArray(j)?j:[]);}catch(e){setErr(e instanceof Error?e.message:"Failed to load data")}finally{setLoading(false)}
-  }
-  useEffect(()=>{load()},[]);
+  },[]);
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{ if(!cancelled) await load(); })();
+    return ()=>{ cancelled=true; };
+  },[load]);
   const byCat: Record<string,number> = {};
   products.forEach(p=>{ const c = (p.category||"Uncategorized"); byCat[c]=(byCat[c]||0)+1; });
   const cats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,8);

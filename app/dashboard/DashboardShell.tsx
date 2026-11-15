@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   Activity, Database, UploadCloud, Wand2, Wrench, BarChart3, PieChart,
   Brain, ShoppingCart, Package, Users, Plug, Workflow, Briefcase, FileText,
-  CreditCard, Settings, LogOut, Moon, Sun, ShieldCheck, ArrowUpRight, Menu, X
+  CreditCard, LogOut, Moon, Sun, ShieldCheck, ArrowUpRight, Menu, X
 } from "lucide-react";
 import styles from "./dashboard.module.css";
 import BrandLogo from "../../lib/BrandLogo";
@@ -32,14 +32,15 @@ const NAV = [
 export default function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [theme, setTheme] = useState<"dark" | "light">(() => {
-    if (typeof window !== "undefined") {
-      const s = localStorage.getItem("rivu_theme") as "dark" | "light" | null;
-      if (s === "dark" || s === "light") return s;
-    }
-    return "dark";
-  });
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [open, setOpen] = useState(false);
+
+useEffect(() => {
+    const stored = localStorage.getItem("rivu_theme") as "dark" | "light" | null;
+    if (stored === "dark" || stored === "light") {
+      queueMicrotask(() => setTheme(stored));
+    }
+  }, []);
   useEffect(() => { document.documentElement.dataset.theme = theme; localStorage.setItem("rivu_theme", theme); }, [theme]);
 
   async function logout() {
@@ -61,7 +62,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
       <button className={styles.mobileMenuBtn} onClick={() => setOpen(!open)} aria-label="Menu">
         {open ? <X size={18} /> : <Menu size={18} />}
       </button>
-      <aside className={${styles.sidebar} }>
+      <aside className={`${styles.sidebar} ${open ? styles.sidebarOpen : ""}`}>
         <div className={styles.brandWrap}><BrandLogo href="/" className={styles.brand} /></div>
         <button className={styles.workspaceButton} type="button" aria-label="Current workspace">
           <span className={styles.workspaceIcon}><Database size={14} /></span>
@@ -81,7 +82,7 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
         </nav>
         <div className={styles.sideFoot}>
           <div className={styles.secure}><ShieldCheck size={14} />Private workspace</div>
-          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")} title="Toggle theme">
+          <button onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
             {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}{theme === "dark" ? "Light" : "Dark"}
           </button>
           <button onClick={logout}><LogOut size={15} />Sign out</button>

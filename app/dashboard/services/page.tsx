@@ -20,7 +20,11 @@ export default function ServicesPage() {
       if(lr.ok) setLeads(await lr.json()); else { /* may be forbidden for non-admin in some setups */ setLeads([]); }
     }catch(e){setErr(e instanceof Error?e.message:"Failed")}finally{setLoading(false)}
   },[]);
-  useEffect(()=>{load()},[load]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => { if (!cancelled) await load(); })();
+    return () => { cancelled = true; };
+  }, [load]);
   async function createProject(e:React.FormEvent){e.preventDefault(); setErr(""); setMsg(""); try{const r=await authFetch("/solutions/custom-solutions/projects",{method:"POST",headers:{...authHeaders(),"Content-Type":"application/json"},body:JSON.stringify({name:pname})}); const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.detail?.message||j.detail||"Could not create project"); setMsg("Custom solution project created."); setPname(""); await load();}catch(e){setErr(e instanceof Error?e.message:"Failed")}}
   async function createLead(e:React.FormEvent){e.preventDefault(); setErr(""); setMsg(""); try{const r=await authFetch("/solutions/crm/leads",{method:"POST",headers:{...authHeaders(),"Content-Type":"application/json"},body:JSON.stringify({company_name:cname,contact_person:cname,email:cemail||"contact@example.com",phone:cphone||undefined,notes:note||undefined})}); const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.detail?.message||j.detail||"Could not submit enquiry/lead"); setMsg("Service enquiry recorded."); setCname(""); setCemail(""); setCphone(""); setNote(""); await load();}catch(e){setErr(e instanceof Error?e.message:"Failed")}}
   return (

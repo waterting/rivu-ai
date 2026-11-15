@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
 import styles from "../dashboard.module.css";
 import { authFetch } from "../../../lib/api";
@@ -8,11 +8,15 @@ const authHeaders=()=>({Authorization:"Bearer "+(typeof window!=="undefined"?loc
 
 export default function AnalyticsPage() {
   const [data,setData]=useState<any>(null); const [err,setErr]=useState(""); const [loading,setLoading]=useState(true);
-  async function load(){
+  const load = useCallback(async()=>{
     setLoading(true); setErr("");
     try{const r=await authFetch("/analytics/organization",{headers:authHeaders()}); const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.detail?.message||j.detail||"Could not load analytics"); setData(j);}catch(e){setErr(e instanceof Error?e.message:"Failed to load analytics")}finally{setLoading(false)}
-  }
-  useEffect(()=>{load()},[]);
+  },[]);
+  useEffect(()=>{
+    let cancelled=false;
+    (async()=>{ if(!cancelled) await load(); })();
+    return ()=>{ cancelled=true; };
+  },[load]);
   const cat = data?.catalogue||{}; const sup = data?.suppliers||{}; const ch = data?.channels||{}; const bil = data?.billing||{};
   const metrics = [
     {label:"Total products (SKUs)", value: cat.total_products ?? 0},
