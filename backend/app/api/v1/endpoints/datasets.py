@@ -24,7 +24,7 @@ from app.audit.service import (
 )
 from app.core.database import get_session
 from app.core.config import settings
-from app.core.security import get_current_user, require_org_role
+from app.core.security import get_current_user, require_org_context, require_org_role
 from app.core.storage import get_storage, compute_checksum, build_storage_key
 from app.core.exceptions import ValidationError, http_not_found
 from app.models.user import User
@@ -146,15 +146,13 @@ async def _run_inline_job(
     except Exception as exc:  # pragma: no cover - background best-effort
         logger.exception("inline_job_failed", job_id=str(job_id), error=str(exc))
 
-
 async def _get_user_org(user: User, db: AsyncSession) -> UUID:
-    result = await db.execute(
-        select(Membership).where(Membership.user_id == user.id, Membership.organization_id == getattr(user, "active_org_id", None)).limit(1)
-    )
-    m = result.scalar_one_or_none()
-    if not m:
-        raise HTTPException(status_code=403, detail={"message": "No organization found"})
-    return m.organization_id
+    """Resolve the caller's explicitly selected organization.
+
+    Delegates to the central tenant context so an unaccepted invitation cannot
+    select another workspace's datasets (audit finding 4).
+    """
+    return await require_org_context(user, db)
 
 
 @router.post("/projects/{project_id}/upload", status_code=202)
@@ -298,11 +296,11 @@ async def upload_dataset(
     # This survives API restarts and does not rely on in-process BackgroundTasks.
     logger.info("dataset_uploaded", dataset_id=str(data_source.id), job_id=str(job.id))
 
-    # When no dedicated worker is deployed (e.g. free-tier hosts without
-    # background-worker support), process the job in this API process so the
-    # upload still produces a profile/quality report. Disabled automatically if a
-    # worker is configured to run (INLINE_PROCESSING=False).
-    if settings.INLINE_PROCESSING and background_tasks is not None:
+    # Optional in-process fallback for deployments with no worker at all (local
+    # dev, CI, free-tier hosts). Disabled in production, where heavy processing
+    # must run on the durable worker (audit critical finding 2). The inline path
+    # re-checks the job status, so if a worker claims the job first this no-ops.
+    if settings.inline_processing_enabled and background_tasks is not None:
         background_tasks.add_task(
             _run_inline_job,
             str(job.id),

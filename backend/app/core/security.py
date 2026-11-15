@@ -125,6 +125,18 @@ async def get_user_membership(user, db):
     return membership
 
 
+async def require_org_context(user, db) -> UUID:
+    """Return the organization id this request is explicitly scoped to.
+
+    Single source of truth for tenant context: goes through
+    :func:`get_user_membership`, so an unaccepted invitation or a token bound to
+    a workspace the user was removed from cannot select data. Endpoints must use
+    this instead of running their own membership query (audit finding 4).
+    """
+    membership = await get_user_membership(user, db)
+    return membership.organization_id
+
+
 async def require_org_role(user, db, allowed_roles: set[str]):
     """Centralized organization role check used by mutating endpoints."""
     membership = await get_user_membership(user, db)

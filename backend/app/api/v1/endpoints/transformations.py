@@ -16,7 +16,7 @@ from app.audit.service import (
     record_event,
 )
 from app.core.database import get_session
-from app.core.security import get_current_user, require_org_role
+from app.core.security import get_current_user, require_org_context, require_org_role
 from app.core.storage import get_storage, build_storage_key, compute_checksum
 from app.core.exceptions import http_not_found
 from app.api.v1.endpoints.datasets import download_url_ttl_seconds
@@ -40,16 +40,8 @@ class ExecutePlanRequest(BaseModel):
 
 
 async def _org(user: User, db: AsyncSession) -> UUID:
-    result = await db.execute(
-        select(Membership.organization_id).where(
-            Membership.user_id == user.id,
-            Membership.organization_id == getattr(user, "active_org_id", None),
-        ).limit(1)
-    )
-    org = result.scalar_one_or_none()
-    if not org:
-        raise HTTPException(403, "No organization found")
-    return org
+    """Resolve the caller's explicitly selected organization (audit finding 4)."""
+    return await require_org_context(user, db)
 
 
 async def _dataset(dataset_id: UUID, user: User, db: AsyncSession):

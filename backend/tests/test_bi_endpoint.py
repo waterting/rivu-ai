@@ -1,4 +1,4 @@
-"""Endpoint-level test for the Business Intelligence route.
+﻿"""Endpoint-level test for the Business Intelligence route.
 
 Runs against a fake session and a fake storage backend so no database, network
 or object store is required.
@@ -98,19 +98,23 @@ def _dataset_and_version():
     version.version_number = 1
     version.file_format = "csv"
     version.storage_key = "org/ds/v1/sales_q1.csv"
-    return ds, version
+
+    # Tenant context now resolves through the central membership lookup, so the
+    # fake session must yield a membership rather than a bare org id.
+    membership = type("Membership", (), {"organization_id": ds.organization_id, "role": "owner"})()
+    return ds, version, membership
 
 
 @pytest.mark.asyncio
 async def test_bi_endpoint_computes_metrics_from_rows(monkeypatch):
-    ds, version = _dataset_and_version()
+    ds, version, membership = _dataset_and_version()
 
     profile = DataProfile()
     profile.id = uuid.uuid4()
     profile.dataset_version_id = version.id
 
     fake_db = FakeSession(
-        [_Result(ds.organization_id), _Result(ds), _Result(version), _Result(profile), _Result(_facts())]
+        [_Result(membership), _Result(ds), _Result(version), _Result(profile), _Result(_facts())]
     )
     fake_user = type("U", (), {"id": uuid.uuid4(), "active_org_id": ds.organization_id})()
 
@@ -148,9 +152,9 @@ async def test_bi_endpoint_computes_metrics_from_rows(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_bi_endpoint_reports_processing_instead_of_guessing(monkeypatch):
-    ds, version = _dataset_and_version()
+    ds, version, membership = _dataset_and_version()
 
-    fake_db = FakeSession([_Result(ds.organization_id), _Result(ds), _Result(version), _Result(None)])
+    fake_db = FakeSession([_Result(membership), _Result(ds), _Result(version), _Result(None)])
     fake_user = type("U", (), {"id": uuid.uuid4(), "active_org_id": ds.organization_id})()
 
     app.dependency_overrides[get_session] = lambda: fake_db

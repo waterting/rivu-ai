@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_org_context
 from app.models.user import User
 from app.models.organization import Membership
 from app.models.dataset import DataSource, DatasetVersion
@@ -26,14 +26,8 @@ router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 async def org_id_for(user: User, db: AsyncSession) -> UUID:
-    result = await db.execute(select(Membership.organization_id).where(
-        Membership.user_id == user.id,
-        Membership.organization_id == getattr(user, "active_org_id", None),
-    ).limit(1))
-    org = result.scalar_one_or_none()
-    if not org:
-        raise HTTPException(403, "No organization found")
-    return org
+    """Resolve the caller's explicitly selected organization (audit finding 4)."""
+    return await require_org_context(user, db)
 
 async def dataset_for(dataset_id: UUID, user: User, db: AsyncSession):
     org = await org_id_for(user, db)

@@ -482,6 +482,20 @@ async def refresh_token(body: dict, db: AsyncSession = Depends(get_session)):
     if not user or user.status != "active":
         raise HTTPException(status_code=401, detail={"message": "Account is not active", "type": "unauthorized"})
     if payload.get("rtv", 0) != user.refresh_token_version:
+        # Reuse of an already-rotated token is the signature of a stolen token
+        # being replayed alongside the legitimate holder. Reject this request and
+        # revoke the whole family so the attacker's copy dies too, rather than
+        # letting the two race (audit finding 7).
+        stale = payload.get("rtv", 0)
+        if isinstance(stale, int) and stale < user.refresh_token_version:
+            user.refresh_token_version += 1
+            await db.commit()
+            logger.warning(
+                "refresh_token_reuse_detected",
+                user_id=str(user.id),
+                presented_rtv=stale,
+                current_rtv=user.refresh_token_version,
+            )
         raise HTTPException(status_code=401, detail={"message": "Refresh token has been revoked or rotated", "type": "unauthorized"})
     membership_result = await db.execute(
         select(Membership, Organization)

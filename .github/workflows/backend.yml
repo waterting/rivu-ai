@@ -31,6 +31,13 @@ jobs:
           DEBUG: "false"
           JWT_SECRET: test-only-secret-for-ci-012345678901234567890123456789
         run: pytest -q
+      - name: Pipeline end-to-end gate
+        working-directory: backend
+        env:
+          APP_ENV: test
+          DEBUG: "false"
+          JWT_SECRET: test-only-secret-for-ci-012345678901234567890123456789
+        run: pytest -q tests/test_pipeline_e2e.py tests/test_launch_gate.py
 
 
   migration-fresh-postgres:

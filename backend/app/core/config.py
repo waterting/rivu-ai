@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,12 +112,24 @@ class Settings(BaseSettings):
     DOWNLOAD_URL_TTL_SECONDS: int = 900
 
     # Process uploaded datasets in the API process (FastAPI BackgroundTasks) when
-    # no separate database-backed worker is running. Enable this on deployments
-    # without a worker (e.g. free-tier hosts that do not support background
-    # workers) so uploads still produce a profile/quality report. Set to False
-    # when the dedicated `app.workers.runner` worker is deployed, to avoid
-    # double-processing (the job claim uses a row lock, so the worker wins).
-    INLINE_PROCESSING: bool = True
+    # no separate database-backed worker is running.
+    #
+    # Unset means: enabled outside production (so local dev and CI still produce
+    # a profile/quality report without deploying a worker) and disabled in
+    # production, where heavy processing must run on the durable
+    # `app.workers.runner` worker instead of an in-process task that dies with
+    # the request worker (audit critical finding 2). Set explicitly to override.
+    INLINE_PROCESSING: bool | None = None
+
+    @model_validator(mode="after")
+    def default_inline_processing_by_env(self):
+        if self.INLINE_PROCESSING is None:
+            object.__setattr__(self, "INLINE_PROCESSING", self.APP_ENV.lower() != "production")
+        return self
+
+    @property
+    def inline_processing_enabled(self) -> bool:
+        return bool(self.INLINE_PROCESSING)
 
     @field_validator("DEFAULT_AI_PROVIDER", mode="before")
     @classmethod
