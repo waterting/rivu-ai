@@ -79,7 +79,7 @@ def parse_to_polars(data: bytes, file_format: str, filename: str) -> Tuple[pl.Da
             df = pl.read_csv(
                 io.StringIO(text),
                 separator=delimiter,
-                infer_schema_length=10000,
+                infer_schema_length=0,
                 null_values=["", "NA", "N/A", "na", "n/a", "NULL", "null", "None", "none", "NaN", "nan"],
                 ignore_errors=False,
                 truncate_ragged_lines=False,
@@ -89,7 +89,11 @@ def parse_to_polars(data: bytes, file_format: str, filename: str) -> Tuple[pl.Da
     elif file_format in ("xlsx", "xls"):
         try:
             import pandas as pd
-            frame = pd.read_excel(io.BytesIO(data), engine="openpyxl" if file_format == "xlsx" else "xlrd")
+            frame = pd.read_excel(
+                io.BytesIO(data),
+                engine="openpyxl" if file_format == "xlsx" else "xlrd",
+                dtype=object,
+            )
             df = pl.from_pandas(frame)
         except Exception as e:
             raise ValidationError(f"Failed to parse Excel file: {e}") from e
@@ -122,6 +126,26 @@ def parse_to_polars(data: bytes, file_format: str, filename: str) -> Tuple[pl.Da
         raise ValidationError("File contains no data rows")
     if df.width == 0:
         raise ValidationError("File contains no columns")
+
+    from app.profiler.roles import resolve_roles, role_summary
+    from app.profiler.schema import apply_schema, schema_records, schema_summary
+
+    df, schemas = apply_schema(df)
+    schema_info = schema_summary(schemas)
+    resolved = resolve_roles(schema_info["columns"])
+    meta["schema"] = {
+        **schema_info,
+        "roles": role_summary(resolved),
+        "columns": resolved,
+    }
+    meta["column_schemas"] = resolved
+
+    logger.info(
+        "schema_inferred",
+        rows=df.height,
+        types=schema_info["type_counts"],
+        identifiers=schema_info["identifier_columns"],
+    )
     return df, meta
 
 

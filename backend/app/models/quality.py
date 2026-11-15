@@ -85,6 +85,11 @@ class QualityIssue(Base):
     evidence: Mapped[dict | None] = mapped_column(JSONB)
     suggested_fix: Mapped[str | None] = mapped_column(Text)
     auto_fixable: Mapped[bool] = mapped_column(Boolean, default=False)
+    issue_id: Mapped[str | None] = mapped_column(String(64))
+    category: Mapped[str | None] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolution_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

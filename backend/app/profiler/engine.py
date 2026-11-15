@@ -143,12 +143,22 @@ def _detect_date_formats(samples: list[str]) -> list[str]:
     return detected
 
 
-def profile_dataframe(df: pl.DataFrame, org_id: str, sample_limit: int = 100_000) -> dict:
+def profile_dataframe(
+    df: pl.DataFrame,
+    org_id: str,
+    sample_limit: int = 100_000,
+    schemas: list[dict] | None = None,
+) -> dict:
     """
     Profile a Polars DataFrame. Returns a structured dict suitable
     for persisting to the database.
+
+    When ``schemas`` is supplied (produced during ingestion) the profiling step
+    reuses those decisions instead of inferring types a second time, so the
+    stored profile and the coerced dataframe always agree.
     """
     start = time.perf_counter()
+    schema_by_name = {entry["column_name"]: entry for entry in (schemas or [])}
 
     # Sample if very large
     if df.height > sample_limit:
@@ -173,7 +183,7 @@ def profile_dataframe(df: pl.DataFrame, org_id: str, sample_limit: int = 100_000
     # Profile each column
     column_profiles = []
     for idx, col_name in enumerate(df.columns):
-        col_profile = _profile_column(df, df_sample, col_name, idx)
+        col_profile = _profile_column(df, df_sample, col_name, idx, schema_by_name.get(col_name))
         column_profiles.append(col_profile)
 
     duration_ms = round((time.perf_counter() - start) * 1000)
@@ -193,7 +203,13 @@ def profile_dataframe(df: pl.DataFrame, org_id: str, sample_limit: int = 100_000
     }
 
 
-def _profile_column(df: pl.DataFrame, df_sample: pl.DataFrame, col_name: str, idx: int) -> dict:
+def _profile_column(
+    df: pl.DataFrame,
+    df_sample: pl.DataFrame,
+    col_name: str,
+    idx: int,
+    schema: dict | None = None,
+) -> dict:
     series = df[col_name]
     sample_series = df_sample[col_name]
     dtype_str = str(series.dtype)
@@ -221,9 +237,12 @@ def _profile_column(df: pl.DataFrame, df_sample: pl.DataFrame, col_name: str, id
     ]
 
     # Semantic type
-    semantic_type = _infer_semantic_type(
-        col_name, dtype_str, sample_vals, null_pct or 0, uniqueness_pct or 0, n_rows
-    )
+    if schema and schema.get("semantic_type"):
+        semantic_type = schema["semantic_type"]
+    else:
+        semantic_type = _infer_semantic_type(
+            col_name, dtype_str, sample_vals, null_pct or 0, uniqueness_pct or 0, n_rows
+        )
 
     # Value frequency (top 20 non-null values)
     value_frequency = {}
@@ -306,6 +325,13 @@ def _profile_column(df: pl.DataFrame, df_sample: pl.DataFrame, col_name: str, id
         "date_formats": date_formats or None,
         "value_frequency": value_frequency if value_frequency else None,
         "sample_values": sample_vals or None,
+        "invalid_count": (schema or {}).get("evidence", {}).get("invalid_count"),
+        "schema_evidence": (schema or {}).get("evidence") or None,
+        "semantic_confidence": (schema or {}).get("confidence"),
+        "role": (schema or {}).get("role"),
+        "role_confidence": (schema or {}).get("role_confidence"),
+        "preserved": (schema or {}).get("preserved", False),
+        "schema_evidence": (schema or {}).get("evidence") or None,
     }
 
 

@@ -317,11 +317,18 @@ CREATE TABLE quality_issues (
   evidence            JSONB,        -- sample bad values, examples
   suggested_fix       TEXT,
   auto_fixable        BOOLEAN DEFAULT FALSE,
+  issue_id            VARCHAR(64),
+  category            VARCHAR(80),
+  status              VARCHAR(20) NOT NULL DEFAULT 'open',
+  resolved_at         TIMESTAMPTZ,
+  resolution_note     TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_quality_issues_report ON quality_issues(quality_report_id);
 CREATE INDEX idx_quality_issues_column ON quality_issues(affected_column);
+CREATE INDEX idx_quality_issues_status ON quality_issues(status);
+CREATE INDEX idx_quality_issues_issue_id ON quality_issues(issue_id);
 
 -- ──────────────────────────────────────────────
 -- AI ANALYSIS & TRANSFORMATION

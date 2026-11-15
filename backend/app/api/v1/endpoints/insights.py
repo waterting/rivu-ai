@@ -12,6 +12,7 @@ from app.models.organization import Membership
 from app.models.dataset import DataSource, DatasetVersion
 from app.models.profile import DataProfile, ColumnProfile
 from app.models.quality import QualityReport, QualityIssue, Job
+from app.profiler.quality import quality_methodology
 from app.models.transformation import TransformationPlan
 from app.ai.factory import get_ai_provider
 from app.core.config import settings
@@ -86,23 +87,142 @@ async def quality(dataset_id: UUID, current_user: User = Depends(get_current_use
     if not report:
         raise HTTPException(202, "Quality report is still processing")
     issues = (await db.execute(select(QualityIssue).where(QualityIssue.quality_report_id == report.id).order_by(QualityIssue.severity, QualityIssue.created_at))).scalars().all()
+    raw_scores = {
+        "completeness": report.completeness_score,
+        "validity": report.validity_score,
+        "consistency": report.consistency_score,
+        "uniqueness": report.uniqueness_score,
+        "integrity": report.integrity_score,
+    }
+    scores = {
+        key: (float(value) if value is not None else None)
+        for key, value in raw_scores.items()
+    }
     return {
         "id": str(report.id), "overall_score": float(report.overall_score),
-        "scores": {
-            "completeness": float(report.completeness_score or 0),
-            "validity": float(report.validity_score or 0),
-            "consistency": float(report.consistency_score or 0),
-            "uniqueness": float(report.uniqueness_score or 0),
-            "integrity": float(report.integrity_score or 0),
-        },
+        "scores": scores,
+        "unavailable_dimensions": [key for key, value in scores.items() if value is None],
+        "methodology": quality_methodology(),
+        "evaluated_records": version.row_count,
         "counts": {"total": report.total_issues, "critical": report.critical_issues, "high": report.high_issues, "medium": report.medium_issues, "low": report.low_issues},
         "issues": [{
-            "id": str(i.id), "type": i.issue_type, "severity": i.severity, "title": i.title,
+            "id": str(i.id), "issue_id": i.issue_id, "type": i.issue_type, "category": i.category,
+            "severity": i.severity, "title": i.title,
             "description": i.description, "column": i.affected_column,
             "rows": i.affected_row_count, "pct": float(i.affected_row_pct or 0),
-            "suggested_fix": i.suggested_fix, "auto_fixable": i.auto_fixable,
+            "evidence": i.evidence or {}, "suggested_fix": i.suggested_fix,
+            "auto_fixable": i.auto_fixable, "status": i.status,
         } for i in issues],
     }
+
+ISSUE_STATUSES = {"open", "in_review", "resolved", "ignored", "accepted"}
+_CLOSED_STATUSES = {"resolved", "ignored", "accepted"}
+
+
+@router.get("/{dataset_id}/issues")
+async def list_issues(
+    dataset_id: UUID,
+    status: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """List quality issues for the current version with their resolution state."""
+    ds, _ = await dataset_for(dataset_id, current_user, db)
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id, DatasetVersion.version_number == ds.current_version
+    ))).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    stmt = select(QualityIssue).where(
+        QualityIssue.dataset_version_id == version.id,
+        QualityIssue.organization_id == ds.organization_id,
+    )
+    if status:
+        if status not in ISSUE_STATUSES:
+            raise HTTPException(400, f"Unknown status '{status}'")
+        stmt = stmt.where(QualityIssue.status == status)
+    rows = (await db.execute(stmt.order_by(QualityIssue.severity, QualityIssue.created_at))).scalars().all()
+
+    counts = {value: 0 for value in ISSUE_STATUSES}
+    for row in rows:
+        counts[row.status] = counts.get(row.status, 0) + 1
+
+    return {
+        "dataset_version_id": str(version.id),
+        "counts": counts,
+        "active_count": sum(count for state, count in counts.items() if state == "open"),
+        "issues": [{
+            "id": str(row.id),
+            "issue_id": row.issue_id,
+            "type": row.issue_type,
+            "category": row.category,
+            "severity": row.severity,
+            "title": row.title,
+            "description": row.description,
+            "column": row.affected_column,
+            "rows": row.affected_row_count,
+            "pct": float(row.affected_row_pct or 0),
+            "evidence": row.evidence or {},
+            "suggested_fix": row.suggested_fix,
+            "auto_fixable": row.auto_fixable,
+            "status": row.status,
+            "resolution_note": row.resolution_note,
+            "resolved_at": row.resolved_at.isoformat() if row.resolved_at else None,
+        } for row in rows],
+    }
+
+
+@router.patch("/{dataset_id}/issues/{issue_pk}")
+async def update_issue_status(
+    dataset_id: UUID,
+    issue_pk: UUID,
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Record what the team decided about a quality issue.
+
+    Resolving an issue records a decision; it does not rewrite the underlying
+    file, so the measured score stays as analysed until the data is transformed
+    and analysed again.
+    """
+    from datetime import datetime, timezone
+
+    ds, _ = await dataset_for(dataset_id, current_user, db)
+    new_status = (payload or {}).get("status")
+    if new_status not in ISSUE_STATUSES:
+        raise HTTPException(400, f"status must be one of {sorted(ISSUE_STATUSES)}")
+
+    issue = (await db.execute(select(QualityIssue).where(
+        QualityIssue.id == issue_pk,
+        QualityIssue.organization_id == ds.organization_id,
+    ))).scalar_one_or_none()
+    if not issue:
+        raise HTTPException(404, "Issue not found")
+
+    issue.status = new_status
+    issue.resolution_note = (payload or {}).get("note")
+    issue.resolved_at = datetime.now(timezone.utc) if new_status in _CLOSED_STATUSES else None
+    await db.commit()
+
+    active = (await db.execute(select(QualityIssue).where(
+        QualityIssue.dataset_version_id == issue.dataset_version_id,
+        QualityIssue.organization_id == ds.organization_id,
+        QualityIssue.status == "open",
+    ))).scalars().all()
+
+    return {
+        "issue": {
+            "id": str(issue.id),
+            "issue_id": issue.issue_id,
+            "status": issue.status,
+            "resolution_note": issue.resolution_note,
+            "resolved_at": issue.resolved_at.isoformat() if issue.resolved_at else None,
+        },
+        "active_count": len(active),
+    }
+
 
 @router.get("/{dataset_id}/jobs")
 async def jobs(dataset_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):

@@ -68,7 +68,11 @@ async def process_dataset_async(
 
             # ── Profile ───────────────────────────────
             try:
-                profile_data = profile_dataframe(df, str(org_uuid))
+                profile_data = profile_dataframe(
+                    df,
+                    str(org_uuid),
+                    schemas=parse_meta.get("column_schemas"),
+                )
             except Exception as e:
                 await _fail_job(db, job, f"Profiling failed: {e}")
                 return
@@ -134,8 +138,31 @@ async def process_dataset_async(
             await db.commit()
 
             # ── Quality report ────────────────────────
+            duplicates: dict = {}
             try:
-                quality_data = calculate_quality_report(profile_data, profile_data["columns"])
+                from app.profiler.duplicates import detect_duplicates
+
+                duplicate_keys = [
+                    column["column_name"]
+                    for column in profile_data["columns"]
+                    if column.get("role") in {"sku", "barcode", "order_id"}
+                ]
+                fuzzy_columns = [
+                    column["column_name"]
+                    for column in profile_data["columns"]
+                    if column.get("role") == "product_name"
+                ]
+                duplicates = detect_duplicates(
+                    df,
+                    key_columns=duplicate_keys,
+                    fuzzy_columns=fuzzy_columns,
+                )
+                quality_data = calculate_quality_report(
+                    profile_data,
+                    profile_data["columns"],
+                    duplicates=duplicates,
+                    row_count=df.height,
+                )
             except Exception as e:
                 logger.error("quality_calc_failed", error=str(e))
                 quality_data = {"overall_score": 0, "issues": [], "total_issues": 0}
@@ -174,6 +201,9 @@ async def process_dataset_async(
                     evidence=issue.get("evidence"),
                     suggested_fix=issue.get("suggested_fix"),
                     auto_fixable=issue.get("auto_fixable", False),
+                    issue_id=issue.get("issue_id"),
+                    category=issue.get("category"),
+                    status="open",
                 )
                 db.add(qi)
 
@@ -209,6 +239,21 @@ async def process_dataset_async(
                 "issues_found": quality_data["total_issues"],
                 "profile_id": str(profile.id),
                 "quality_report_id": str(qr.id),
+                "dimension_scores": {
+                    "completeness": quality_data.get("completeness_score"),
+                    "validity": quality_data.get("validity_score"),
+                    "consistency": quality_data.get("consistency_score"),
+                    "uniqueness": quality_data.get("uniqueness_score"),
+                    "integrity": quality_data.get("integrity_score"),
+                },
+                "unavailable_dimensions": quality_data.get("unavailable_dimensions", []),
+                "duplicates": {
+                    "exact_rows": (duplicates or {}).get("exact_rows", {}).get("count", 0),
+                    "key_excess_rows": (duplicates or {}).get("total_extra_rows", 0),
+                    "near_duplicate_pairs": sum(
+                        entry.get("count", 0) for entry in (duplicates or {}).get("near_duplicates", [])
+                    ),
+                },
             }
 
             await db.commit()
