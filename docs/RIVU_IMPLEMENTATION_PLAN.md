@@ -80,8 +80,8 @@
   6. `/tools`: cards are now links to `/signup?tool=<id>` (open the workspace tool after auth).
   7. Worker/INLINE_PROCESSING verified (inline default true).
 - **Phase 2 — Marketing website**: Explore-the-Tool CTA card added at the bottom of the homepage (done this turn). Remaining: visual polish passes.
-- **Phase 3 — Unified workspace**: scaffold one app shell with 15 sections (§Overview…§Billing), wire existing engines. **Not yet built** — largest remaining lift.
-- **Phase 4 — Website→product integration**: every public product/tool opens its section. Partially done (`/tools` links; Explore CTA).
+- **Phase 3 — Unified workspace**: ✅ built. `app/dashboard/DashboardShell.tsx` + `app/dashboard/layout.tsx` wrap every dashboard route in one 15-section sidebar (Overview, Data Sources, Data Refinery, Tools Centre, Data Analytics, Data Visualization, AI Business Intelligence, Commerce & Catalogue, Product & SKU, Supplier Management, Integrations, Workflows & Automation, Services, Reports, Billing & Settings). Per-page shells were removed from billing, channels, suppliers and dataset detail; mobile sidebar and auth guard added; Overview now carries a workspace map linking every section.
+- **Phase 4 — Website→product integration**: every public product/tool opens its section. `/tools` cards deep-link to `/signup?tool=<id>`; signup/login honour `?tool=` and land on `/dashboard/tools?tool=<id>`; Explore CTA on the homepage.
 - **Phase 5 — Testing**: unit/integration/e2e, lint/typecheck/build. Regression tests for Phase 1 fixes still to add.
 
 ## E. Honest status of the big asks
@@ -91,7 +91,9 @@
   backend engines but not one shell/nav. This is the main Phase 3 effort.
 - **AI Business Intelligence** (what sold, margins, restock, demand): NOT built.
   Needs a BI/analysis layer over datasets + Groq. No fake answers.
-- **Data Compare / Media Matcher**: NOT implemented.
+- **Data Compare**: ✅ implemented (`/dashboard/tools/compare`) — real profile diff of two datasets: rows, columns, nulls, duplicates, column type changes, null-rate shifts.
+- **Format Studio**: ✅ implemented (`/dashboard/tools/format-studio`) — per-version exports (CSV/XLSX/JSON/Parquet) generated from stored artifacts.
+- **Media Matcher**: ✅ implemented (`/dashboard/tools/media-matcher`) — deterministic audit of whether product image filenames reference their SKU; reports only what it can verify.
 - **Shopify OAuth lifecycle / WooCommerce**: credential/setup blocked; custom-app
   token flow only; Woo is template-only.
 
