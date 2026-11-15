@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Script from "next/script";
 import { useRouter } from "next/navigation";
 import { API, extractErrorMessage } from "./api";
-import styles from "../app/login/login.module.css";
+import styles from "./auth.module.css";
 
 declare global {
   interface Window {
@@ -130,8 +130,10 @@ export default function GoogleSignInButton({
         cancel_on_tap_outside: true,
       });
 
-      // Google owns the contents of this mount node. Keep it separate from
-      // React-rendered children so React never reconciles Google's iframe DOM.
+      // Google's script draws a fixed-width button inside a div it owns, so keep
+      // that mount node separate from React-rendered children.
+      const hostWidth = Math.max(240, Math.min(430, Math.floor(containerRef.current.clientWidth || 375)));
+
       window.google.accounts.id.renderButton(containerRef.current, {
         type: "standard",
         theme: "filled_black",
@@ -139,7 +141,7 @@ export default function GoogleSignInButton({
         shape: "rectangular",
         text,
         logo_alignment: "left",
-        width: 375,
+        width: hostWidth,
       });
       hasRenderedRef.current = true;
       setTimeout(() => setRendered(true), 0);
