@@ -10,6 +10,7 @@ from app.models.transformation import TransformationPlan, TransformationRun
 from app.models.billing import SubscriptionPlan, Subscription, UsageEvent, Invoice, Payment
 from app.models.commerce import Supplier, SupplierMappingRecipe, Product, ProductVariant, ChannelConnection, ChannelProductListing
 from app.models.custom_solutions import CustomSolutionProject, ProjectMilestone, Lead
+from app.models.audit import AuditLog
 
 __all__ = [
     "User",
@@ -40,4 +41,5 @@ __all__ = [
     "CustomSolutionProject",
     "ProjectMilestone",
     "Lead",
+    "AuditLog",
 ]

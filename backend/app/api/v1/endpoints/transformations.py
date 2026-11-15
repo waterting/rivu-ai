@@ -1,19 +1,26 @@
-"""Approved transformation execution and preview endpoints."""
+﻿"""Approved transformation execution and preview endpoints."""
 import io
 import json
 from datetime import datetime, timezone
 from uuid import UUID
 
 import polars as pl
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.service import (
+    DOWNLOAD_URL_ISSUED,
+    client_ip,
+    client_user_agent,
+    record_event,
+)
 from app.core.database import get_session
 from app.core.security import get_current_user, require_org_role
 from app.core.storage import get_storage, build_storage_key, compute_checksum
 from app.core.exceptions import http_not_found
+from app.api.v1.endpoints.datasets import download_url_ttl_seconds
 from app.models.user import User
 from app.models.organization import Membership
 from app.models.dataset import DataSource, DatasetVersion
@@ -245,6 +252,7 @@ async def activate_version(
 async def execute_plan(
     dataset_id: UUID,
     body: ExecutePlanRequest,
+    request: Request = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
@@ -339,12 +347,42 @@ async def execute_plan(
         "schema.json": (lambda: json.dumps(schema_payload, indent=2).encode("utf-8"), "application/json"),
     }
     artifacts = {}
+    ttl = download_url_ttl_seconds()
     for ext, (builder, content_type) in artifact_builders.items():
         filename = f"{ds.name}_v{next_version}.{ext}"
         key = f"{artifact_root}/{filename}"
         artifact_data = builder()
         await get_storage().upload_file(key, artifact_data, content_type, metadata)
-        artifacts[ext] = {"filename": filename, "storage_key": key, "download_url": await get_storage().get_download_url(key, expires_in=900), "size_bytes": len(artifact_data)}
+        artifacts[ext] = {
+            "filename": filename,
+            "storage_key": key,
+            "download_url": await get_storage().get_download_url(key, expires_in=ttl),
+            "expires_in": ttl,
+            "size_bytes": len(artifact_data),
+        }
+        await record_event(
+            db,
+            action=DOWNLOAD_URL_ISSUED,
+            resource_type="transformation_plan",
+            resource_id=str(plan.id),
+            organization_id=org_id,
+            actor_id=getattr(current_user, "id", None),
+            details={
+                "dataset_id": str(ds.id),
+                "version_number": next_version,
+                "storage_key": key,
+                "format": ext,
+                "size_bytes": len(artifact_data),
+                "expires_in": ttl,
+                "surface": "transformation_result",
+            },
+            ip_address=client_ip(request),
+            user_agent=client_user_agent(request),
+            # The plan status, artifacts and version row must land together, so
+            # the audit row joins the endpoint's own transaction instead of
+            # committing a half-finished transformation.
+            commit=False,
+        )
 
     # Refined outputs use modern XLSX for legacy XLS sources; xlwt is intentionally not used.
     output_format = source_version.file_format if source_version.file_format in {"csv", "json", "parquet", "xlsx"} else "xlsx"

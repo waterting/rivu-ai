@@ -1,4 +1,4 @@
-"""
+﻿"""
 Datasets endpoints: upload, list, get, profile, analyze, version management.
 """
 
@@ -9,12 +9,19 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import polars as pl
 import structlog
 
+from app.audit.service import (
+    DOWNLOAD_URL_DENIED,
+    DOWNLOAD_URL_ISSUED,
+    client_ip,
+    client_user_agent,
+    record_event,
+)
 from app.core.database import get_session
 from app.core.config import settings
 from app.core.security import get_current_user, require_org_role
@@ -29,6 +36,30 @@ from app.ingestion.parser import validate_upload, parse_to_polars, validate_file
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
+
+
+def download_url_ttl_seconds() -> int:
+    """Presigned URL lifetime, bounded so a leaked URL cannot live forever."""
+    return max(60, min(settings.DOWNLOAD_URL_TTL_SECONDS, 24 * 3600))
+
+
+def is_safe_storage_key(storage_key: str, base_key: str) -> bool:
+    """True when ``storage_key`` stayed inside the version's own prefix.
+
+    Object keys are not paths, but a key containing traversal or an absolute
+    path would still select an object outside the intended prefix, so both are
+    rejected before a URL is minted.
+    """
+    if not storage_key or not base_key:
+        return False
+    if storage_key.startswith("/") or ".." in storage_key.split("/"):
+        return False
+    if "\\" in storage_key:
+        return False
+    base_dir = base_key.rsplit("/", 1)[0] if "/" in base_key else ""
+    if base_dir and not storage_key.startswith(base_dir + "/"):
+        return False
+    return True
 
 
 async def _run_inline_job(
@@ -298,10 +329,17 @@ async def export_dataset(
     dataset_id: UUID,
     version_number: int,
     format: str = "csv",
+    request: Request = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
-    """Get a presigned download URL for a dataset version or its generated sibling artifact."""
+    """Get a presigned download URL for a dataset version or its generated sibling artifact.
+
+    The URL is a bearer token, so minting one is recorded in the audit trail
+    with the tenant, the actor and the object key. Lifecycle: the lookup is
+    scoped to the caller's organization, the key is checked against the version
+    prefix, and the TTL comes from configuration rather than a per-route literal.
+    """
     org_id = await _get_user_org(current_user, db)
     ds = await _get_dataset_or_404(dataset_id, org_id, db)
 
@@ -309,6 +347,7 @@ async def export_dataset(
         select(DatasetVersion).where(
             DatasetVersion.data_source_id == dataset_id,
             DatasetVersion.version_number == version_number,
+            DatasetVersion.organization_id == org_id,
         )
     )
     version = result.scalar_one_or_none()
@@ -318,6 +357,17 @@ async def export_dataset(
     requested = (format or version.file_format).lower().lstrip(".")
     allowed = {"csv", "json", "parquet", "xlsx"}
     if requested not in allowed:
+        await record_event(
+            db,
+            action=DOWNLOAD_URL_DENIED,
+            resource_type="dataset_version",
+            resource_id=str(version.id),
+            organization_id=org_id,
+            actor_id=current_user.id,
+            details={"reason": "unsupported_format", "requested": requested},
+            ip_address=client_ip(request),
+            user_agent=client_user_agent(request),
+        )
         raise HTTPException(status_code=400, detail={"message": f"Unsupported export format: {requested}"})
 
     storage_key = version.storage_key
@@ -326,7 +376,18 @@ async def export_dataset(
     if requested != version.file_format:
         # Refined versions create sibling artifacts under the same vN directory.
         # Raw uploads only have their original source artifact.
-        if not version.version_label.startswith("refined"):
+        if not version.version_label or not version.version_label.startswith("refined"):
+            await record_event(
+                db,
+                action=DOWNLOAD_URL_DENIED,
+                resource_type="dataset_version",
+                resource_id=str(version.id),
+                organization_id=org_id,
+                actor_id=current_user.id,
+                details={"reason": "format_not_available", "requested": requested},
+                ip_address=client_ip(request),
+                user_agent=client_user_agent(request),
+            )
             raise HTTPException(
                 status_code=404,
                 detail={"message": f"{requested.upper()} is not available for this version"},
@@ -336,6 +397,17 @@ async def export_dataset(
         candidate_key = f"{prefix}/{stem}.{requested}"
         storage = get_storage()
         if not await storage.file_exists(candidate_key):
+            await record_event(
+                db,
+                action=DOWNLOAD_URL_DENIED,
+                resource_type="dataset_version",
+                resource_id=str(version.id),
+                organization_id=org_id,
+                actor_id=current_user.id,
+                details={"reason": "artifact_missing", "requested": requested},
+                ip_address=client_ip(request),
+                user_agent=client_user_agent(request),
+            )
             raise HTTPException(
                 status_code=404,
                 detail={"message": f"{requested.upper()} artifact is not available for this version"},
@@ -343,14 +415,50 @@ async def export_dataset(
         storage_key = candidate_key
         output_format = requested
 
+    if not is_safe_storage_key(storage_key, version.storage_key):
+        # The key is derived from a stored value, but it is still the only thing
+        # that decides which object is handed out; never mint a URL for a key
+        # that escaped the version's own prefix.
+        await record_event(
+            db,
+            action=DOWNLOAD_URL_DENIED,
+            resource_type="dataset_version",
+            resource_id=str(version.id),
+            organization_id=org_id,
+            actor_id=current_user.id,
+            details={"reason": "unsafe_storage_key", "storage_key": storage_key},
+            ip_address=client_ip(request),
+            user_agent=client_user_agent(request),
+        )
+        raise HTTPException(status_code=500, detail={"message": "Could not resolve a safe download target"})
+
+    ttl = download_url_ttl_seconds()
     try:
-        url = await get_storage().get_download_url(storage_key, expires_in=3600)
+        url = await get_storage().get_download_url(storage_key, expires_in=ttl)
     except Exception as e:
         raise HTTPException(status_code=500, detail={"message": f"Could not generate download URL: {e}"})
 
+    await record_event(
+        db,
+        action=DOWNLOAD_URL_ISSUED,
+        resource_type="dataset_version",
+        resource_id=str(version.id),
+        organization_id=org_id,
+        actor_id=current_user.id,
+        details={
+            "dataset_id": str(dataset_id),
+            "version_number": version_number,
+            "storage_key": storage_key,
+            "format": output_format,
+            "expires_in": ttl,
+        },
+        ip_address=client_ip(request),
+        user_agent=client_user_agent(request),
+    )
+
     return {
         "download_url": url,
-        "expires_in": 3600,
+        "expires_in": ttl,
         "version": version_number,
         "format": output_format,
         "filename": f"{ds.name}_v{version_number}.{output_format}",

@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     # latency-critical deployments that already cap memory another way.
     MEASURE_PARSE_MEMORY: bool = True
 
+    # Lifetime of a presigned download URL. A URL is a bearer token, so this is
+    # the window in which a leaked link stays usable (audit: lifecycle
+    # validation for presigned downloads).
+    DOWNLOAD_URL_TTL_SECONDS: int = 900
+
     # Process uploaded datasets in the API process (FastAPI BackgroundTasks) when
     # no separate database-backed worker is running. Enable this on deployments
     # without a worker (e.g. free-tier hosts that do not support background

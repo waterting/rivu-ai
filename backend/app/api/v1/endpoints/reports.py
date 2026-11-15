@@ -1,13 +1,20 @@
-"""Downloadable dataset reports."""
+﻿"""Downloadable dataset reports."""
 import io, json
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.audit.service import (
+    DOWNLOAD_URL_ISSUED,
+    client_ip,
+    client_user_agent,
+    record_event,
+)
 from app.core.database import get_session
 from app.core.storage import get_storage
 from app.core.security import get_current_user
+from app.api.v1.endpoints.datasets import download_url_ttl_seconds
 from app.models.user import User
 from app.models.organization import Membership
 from app.models.dataset import DataSource, DatasetVersion
@@ -62,7 +69,7 @@ def draw_rivu_brand(canvas, doc):
     canvas.setFillColorRGB(0.10,0.08,0.13); canvas.setFont("Helvetica-Bold",15); canvas.drawString(x+18*mm,y-2*mm,"rivu")
     canvas.setFillColorRGB(0.55,0.34,0.95); canvas.setFont("Helvetica",15); canvas.drawString(x+43*mm,y-2*mm,"ai")
     canvas.setStrokeColorRGB(0.86,0.85,0.90); canvas.line(18*mm,13*mm,192*mm,13*mm)
-    canvas.setFillColorRGB(0.42,0.41,0.48); canvas.setFont("Helvetica",7); canvas.drawRightString(192*mm,8*mm,"Rivu AI · Confidential data intelligence · Page %d" % doc.page)
+    canvas.setFillColorRGB(0.42,0.41,0.48); canvas.setFont("Helvetica",7); canvas.drawRightString(192*mm,8*mm,"Rivu AI Â· Confidential data intelligence Â· Page %d" % doc.page)
     canvas.restoreState()
 
 @router.get("/{dataset_id}/json")
@@ -83,7 +90,7 @@ async def report_json(dataset_id: UUID, current_user: User=Depends(get_current_u
 
 
 @router.get("/{dataset_id}/dashboard")
-async def report_dashboard(dataset_id: UUID, current_user: User=Depends(get_current_user), db: AsyncSession=Depends(get_session)):
+async def report_dashboard(dataset_id: UUID, request: Request = None, current_user: User=Depends(get_current_user), db: AsyncSession=Depends(get_session)):
     """Return the live Power BI-style report payload plus an AI executive summary."""
     org=(await db.execute(select(Membership.organization_id).where(Membership.user_id==current_user.id, Membership.organization_id==getattr(current_user, "active_org_id", None)).limit(1))).scalar_one_or_none()
     ds=(await db.execute(select(DataSource).where(DataSource.id==dataset_id,DataSource.organization_id==org))).scalar_one_or_none()
@@ -112,12 +119,37 @@ async def report_dashboard(dataset_id: UUID, current_user: User=Depends(get_curr
     payload["artifacts"]={}
     if latest_run and version.version_number > 1:
         root=f"orgs/{org}/projects/{ds.project_id}/datasets/{ds.id}/v{version.version_number}"
+        ttl = download_url_ttl_seconds()
         for ext in ("csv","xlsx","xls","json","parquet","schema.json"):
             key=f"{root}/{ds.name}_v{version.version_number}.{ext}"
             try:
-                payload["artifacts"][ext]={"filename":key.rsplit("/",1)[-1],"download_url":await get_storage().get_download_url(key,expires_in=900)}
+                if not await get_storage().file_exists(key):
+                    continue
+                payload["artifacts"][ext]={
+                    "filename":key.rsplit("/",1)[-1],
+                    "download_url":await get_storage().get_download_url(key,expires_in=ttl),
+                    "expires_in":ttl,
+                }
+                await record_event(
+                    db,
+                    action=DOWNLOAD_URL_ISSUED,
+                    resource_type="dataset_version",
+                    resource_id=str(version.id),
+                    organization_id=org,
+                    actor_id=current_user.id,
+                    details={
+                        "dataset_id": str(ds.id),
+                        "version_number": version.version_number,
+                        "storage_key": key,
+                        "format": ext,
+                        "expires_in": ttl,
+                        "surface": "report_dashboard",
+                    },
+                    ip_address=client_ip(request),
+                    user_agent=client_user_agent(request),
+                )
             except Exception:
-                pass
+                continue
     payload["ai"] = await build_ai_report(
         {"dataset":payload["dataset"],"profile":payload["profile"],"quality":payload["quality"],"issues":payload["issues"][:50],"refinement":payload["refinement"],"columns":payload["columns"][:60]},
         float(quality.overall_score),
@@ -216,11 +248,11 @@ Refinement: {refinement_summary}"""
         Paragraph(ai_report.get("executive_summary") or ai_summary, body),
         Spacer(1, 7),
         Paragraph("<b>Key findings</b>", styles["Heading2"]),
-        *[Paragraph("• "+str(x), body) for x in (ai_report.get("key_findings") or [])[:6]],
+        *[Paragraph("â€¢ "+str(x), body) for x in (ai_report.get("key_findings") or [])[:6]],
         Paragraph("<b>Risk analysis</b>", styles["Heading2"]),
-        *[Paragraph("• "+str(x), body) for x in (ai_report.get("risk_analysis") or [])[:5]],
+        *[Paragraph("â€¢ "+str(x), body) for x in (ai_report.get("risk_analysis") or [])[:5]],
         Paragraph("<b>Recommended actions</b>", styles["Heading2"]),
-        *[Paragraph("• "+str(x), body) for x in (ai_report.get("recommended_actions") or [])[:6]],
+        *[Paragraph("â€¢ "+str(x), body) for x in (ai_report.get("recommended_actions") or [])[:6]],
         Spacer(1, 10),
     ]
     if profile:
@@ -267,7 +299,7 @@ Refinement: {refinement_summary}"""
     story.append(Paragraph(f"Issues detected: {len(issues)}", styles["Heading2"]))
     issue_rows = [["Severity", "Issue", "Column"]]
     for issue in issues[:100]:
-        issue_rows.append([str(issue.severity), str(issue.title), str(issue.affected_column or "—")])
+        issue_rows.append([str(issue.severity), str(issue.title), str(issue.affected_column or "â€”")])
     table = Table(issue_rows, colWidths=[25*mm, 95*mm, 45*mm], repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#172033")),
@@ -317,24 +349,24 @@ async def executive_pdf(dataset_id: UUID, current_user: User = Depends(get_curre
     styles=getSampleStyleSheet()
     title=ParagraphStyle("ExecTitle",parent=styles["Title"],fontSize=24,textColor=colors.HexColor("#172033"))
     body=ParagraphStyle("ExecBody",parent=styles["BodyText"],fontSize=9,leading=13)
-    story=[Paragraph("RIVU AI — EXECUTIVE INTELLIGENCE",title),Spacer(1,8),
-      Paragraph(f"<b>{ds.name}</b> · version {version.version_number}",styles["Heading2"]),
+    story=[Paragraph("RIVU AI â€” EXECUTIVE INTELLIGENCE",title),Spacer(1,8),
+      Paragraph(f"<b>{ds.name}</b> Â· version {version.version_number}",styles["Heading2"]),
       Paragraph(ai_report.get("executive_summary") or "",body),Spacer(1,8),
       Paragraph("Key Findings",styles["Heading2"]),
-      *[Paragraph("• "+str(x),body) for x in (ai_report.get("key_findings") or [])[:6]],
+      *[Paragraph("â€¢ "+str(x),body) for x in (ai_report.get("key_findings") or [])[:6]],
       Paragraph("Risk Analysis",styles["Heading2"]),
-      *[Paragraph("• "+str(x),body) for x in (ai_report.get("risk_analysis") or [])[:5]],
+      *[Paragraph("â€¢ "+str(x),body) for x in (ai_report.get("risk_analysis") or [])[:5]],
       Paragraph("Recommended Actions",styles["Heading2"]),
-      *[Paragraph("• "+str(x),body) for x in (ai_report.get("recommended_actions") or [])[:6]],
-      Paragraph(f"Source: {ds.original_filename} · {profile.row_count:,} rows · {profile.column_count} columns",body),Spacer(1,12),
+      *[Paragraph("â€¢ "+str(x),body) for x in (ai_report.get("recommended_actions") or [])[:6]],
+      Paragraph(f"Source: {ds.original_filename} Â· {profile.row_count:,} rows Â· {profile.column_count} columns",body),Spacer(1,12),
       Paragraph("Data Quality Snapshot",styles["Heading2"])]
     rows=[["Overall",f"{float(quality.overall_score):.1f}/100"],["Completeness",f"{float(quality.completeness_score or 0):.1f}"],["Validity",f"{float(quality.validity_score or 0):.1f}"],["Consistency",f"{float(quality.consistency_score or 0):.1f}"],["Uniqueness",f"{float(quality.uniqueness_score or 0):.1f}"],["Integrity",f"{float(quality.integrity_score or 0):.1f}"],["Issues",str(len(issues))]]
     t=Table(rows,colWidths=[55*mm,55*mm]);t.setStyle(TableStyle([("GRID",(0,0),(-1,-1),.35,colors.HexColor("#cbd5e1")),("FONTSIZE",(0,0),(-1,-1),9)]));story += [t,Spacer(1,12),Paragraph("Priority Risks",styles["Heading2"])]
     if top_issues:
-      ir=[["Severity","Issue","Column"]]+[[str(i.severity),str(i.title),str(i.affected_column or "—")] for i in top_issues]
+      ir=[["Severity","Issue","Column"]]+[[str(i.severity),str(i.title),str(i.affected_column or "â€”")] for i in top_issues]
       it=Table(ir,colWidths=[25*mm,95*mm,45*mm],repeatRows=1);it.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#172033")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("GRID",(0,0),(-1,-1),.3,colors.HexColor("#cbd5e1")),("FONTSIZE",(0,0),(-1,-1),7.5)]));story.append(it)
     story += [Spacer(1,12),Paragraph("Recommended Actions",styles["Heading2"])]
     for issue in top_issues[:5]:
-      story.append(Paragraph(f"• {issue.suggested_fix or issue.title}",body))
+      story.append(Paragraph(f"â€¢ {issue.suggested_fix or issue.title}",body))
     doc.build(story);buf.seek(0)
     return StreamingResponse(buf,media_type="application/pdf",headers={"Content-Disposition":f'attachment; filename="{ds.name}-executive-rivu-report.pdf"'})
