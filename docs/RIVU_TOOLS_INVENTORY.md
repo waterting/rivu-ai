@@ -20,7 +20,7 @@ reflects whether the named capability exists *somewhere* in the product.
 
 | # | Marketed tool | Functional? | Real location | Engine / evidence |
 |---|---|---|---|---|
-| 1 | Format Studio | ✅ (as export) | Dataset export | `endpoints/datasets.py` export handler |
+| 1 | Format Studio | ✅ | Workspace tool `/dashboard/tools/format-studio` | `endpoints/datasets.py` export handler |
 | 2 | Data Profiler | ✅ | Dashboard / Data Studio | `profiler/engine.py` |
 | 3 | Data Cleaner | ✅ | Refinement transform | `cleaning/engine.py` |
 | 4 | Data Validator | ✅ | Quality analysis | `profiler/quality.py` |
@@ -28,9 +28,9 @@ reflects whether the named capability exists *somewhere* in the product.
 | 6 | AI Product Enrichment | ✅ (advisory) | Catalogue Portal | `catalogue/ai_enrich.py` |
 | 7 | Catalogue Normalizer | ✅ | Catalogue Portal | `catalogue/mapping.py` |
 | 8 | Duplicate Finder | ✅ | Refinement ops | `cleaning/engine.py` (`flag_duplicates`, `remove_duplicates`) |
-| 9 | Data Compare | ❌ | — | NOT IMPLEMENTED |
+| 9 | Data Compare | ✅ | Workspace tool `/dashboard/tools/compare` | Profile endpoints (`insights.py`) diffed client-side; no new backend needed |
 | 10 | SKU & Variant Manager | ⚠️ partial | PIM model only | `models/commerce.py` (`Product`, `ProductVariant`) |
-| 11 | Media Matcher | ❌ | — | NOT IMPLEMENTED |
+| 11 | Media Matcher | ✅ | Workspace tool `/dashboard/tools/media-matcher` | Deterministic filename↔SKU audit over PIM records (`commerce.py`) |
 | 12 | Bulk Exporter | ⚠️ partial | Catalogue export | `catalogue/exporter.py` |
 | 13 | Data Quality Report | ✅ | Dashboard / PDF | `endpoints/reports.py` |
 | 14 | Custom Transformation Builder | ⚠️ partial | Refinement (fixed allowlist) | `cleaning/engine.py` |
@@ -163,9 +163,9 @@ reflects whether the named capability exists *somewhere* in the product.
 
 | Tool | Evidence |
 |---|---|
-| Data Compare | No backend, no UI. |
-| Media Matcher | No backend, no UI. |
-| Standalone Format Studio (distinct tool) | Only export exists; no dedicated tool. |
+| Data Compare | UI added at `/dashboard/tools/compare`; uses existing profile endpoints. |
+| Media Matcher | UI added at `/dashboard/tools/media-matcher`; verifies filename conventions only, not image content. |
+| Standalone Format Studio (distinct tool) | UI added at `/dashboard/tools/format-studio` (per-version, four formats). |
 
 ---
 
