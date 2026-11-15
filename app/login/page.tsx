@@ -33,7 +33,8 @@ export default function Login() {
       localStorage.setItem("rivu_refresh_token", d.tokens.refresh_token);
       localStorage.setItem("rivu_user", JSON.stringify(d.user));
       localStorage.setItem("rivu_org", JSON.stringify(d.organization));
-      router.push("/dashboard");
+            const tool = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("tool") : null;
+      router.push(tool ? `/dashboard/tools?tool=${tool}` : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in");
     } finally {

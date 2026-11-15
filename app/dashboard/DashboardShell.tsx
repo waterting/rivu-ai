@@ -36,6 +36,12 @@ export default function DashboardShell({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
 
 useEffect(() => {
+    if (!localStorage.getItem("rivu_access_token")) {
+      queueMicrotask(() => router.replace("/login"));
+    }
+  }, [router]);
+
+  useEffect(() => {
     const stored = localStorage.getItem("rivu_theme") as "dark" | "light" | null;
     if (stored === "dark" || stored === "light") {
       queueMicrotask(() => setTheme(stored));
