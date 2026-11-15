@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import polars as pl
@@ -31,6 +31,47 @@ router = APIRouter()
 logger = structlog.get_logger(__name__)
 
 
+async def _run_inline_job(
+    job_id: str,
+    version_id: str,
+    data_source_id: str,
+    org_id: str,
+    file_format: str,
+) -> None:
+    """Process a queued job in the API process when no separate worker is running.
+
+    Guards against double-processing: if a dedicated worker has already claimed
+    the job (status no longer "queued"), this does nothing. The heavy lifting is
+    the same ``process_dataset_async`` the worker uses.
+    """
+    from uuid import UUID
+
+    from sqlalchemy import select
+
+    from app.core import database
+    from app.models.quality import Job
+    from app.workers.processor import process_dataset_async
+
+    try:
+        async with database._session_factory() as db:
+            job = (
+                await db.execute(select(Job).where(Job.id == UUID(str(job_id))))
+            ).scalar_one_or_none()
+            if job is None or job.status != "queued":
+                # Already claimed by a worker or no longer pending.
+                return
+        await process_dataset_async(
+            job_id=job_id,
+            version_id=version_id,
+            data_source_id=data_source_id,
+            org_id=org_id,
+            raw_bytes=None,
+            file_format=file_format,
+        )
+    except Exception as exc:  # pragma: no cover - background best-effort
+        logger.exception("inline_job_failed", job_id=str(job_id), error=str(exc))
+
+
 async def _get_user_org(user: User, db: AsyncSession) -> UUID:
     result = await db.execute(
         select(Membership).where(Membership.user_id == user.id, Membership.organization_id == getattr(user, "active_org_id", None)).limit(1)
@@ -49,6 +90,7 @@ async def upload_dataset(
     description: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
+    background_tasks: BackgroundTasks = None,
 ):
     """Upload a dataset file and start processing pipeline."""
     membership = await require_org_role(current_user, db, {"owner", "admin", "editor"})
@@ -180,6 +222,20 @@ async def upload_dataset(
     # The committed job is picked up by the separate database-backed worker.
     # This survives API restarts and does not rely on in-process BackgroundTasks.
     logger.info("dataset_uploaded", dataset_id=str(data_source.id), job_id=str(job.id))
+
+    # When no dedicated worker is deployed (e.g. free-tier hosts without
+    # background-worker support), process the job in this API process so the
+    # upload still produces a profile/quality report. Disabled automatically if a
+    # worker is configured to run (INLINE_PROCESSING=False).
+    if settings.INLINE_PROCESSING and background_tasks is not None:
+        background_tasks.add_task(
+            _run_inline_job,
+            str(job.id),
+            str(version.id),
+            str(data_source.id),
+            str(org_id),
+            file_format,
+        )
 
     return {
         "message": "Dataset uploaded successfully. Processing started.",

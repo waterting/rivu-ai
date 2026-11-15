@@ -591,8 +591,8 @@
   z-index: 0 !important;
   opacity: 0.5;
   pointer-events: none;
-  -webkit-mask-image: radial-gradient(circle at 72% 38%, #000 0%, rgba(0,0,0,0.45) 46%, transparent 80%);
-  mask-image: radial-gradient(circle at 72% 38%, #000 0%, rgba(0,0,0,0.45) 46%, transparent 80%);
+  -webkit-mask-image: radial-gradient(circle at 80% 40%, #000 0%, rgba(0,0,0,0.42) 44%, transparent 76%);
+  mask-image: radial-gradient(circle at 80% 40%, #000 0%, rgba(0,0,0,0.42) 44%, transparent 76%);
 }
 .hero > .container { position: relative; z-index: 2; }
 .heroTitle {

@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     MAX_AI_SAMPLE_ROWS: int = 1_000
     JOB_WORKER_CONCURRENCY: int = 4
 
+    # Process uploaded datasets in the API process (FastAPI BackgroundTasks) when
+    # no separate database-backed worker is running. Enable this on deployments
+    # without a worker (e.g. free-tier hosts that do not support background
+    # workers) so uploads still produce a profile/quality report. Set to False
+    # when the dedicated `app.workers.runner` worker is deployed, to avoid
+    # double-processing (the job claim uses a row lock, so the worker wins).
+    INLINE_PROCESSING: bool = True
+
     @field_validator("DEFAULT_AI_PROVIDER", mode="before")
     @classmethod
     def require_supported_ai_provider(cls, value):
