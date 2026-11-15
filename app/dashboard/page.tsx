@@ -1,6 +1,7 @@
 ﻿"use client";
 import { ChangeEvent, useCallback, useEffect, useState } from "react";
 import { Activity, ArrowUpRight, Database, Download, FileText, FolderPlus, Plus, RefreshCw, Sparkles, UploadCloud, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import styles from "./dashboard.module.css";
 import { authFetch } from "../../lib/api";
@@ -11,6 +12,25 @@ type Dataset={id:string;name:string;original_filename:string;file_format:string;
 type QualityIssue={id:string;severity?:string;title?:string;description?:string;affected_column?:string};
 type Intelligence={dataset:{id:string;name:string;source:string;format:string;version:number};profile:{rows:number;columns:number;duplicates:number;duplicate_pct:number;nulls:number;null_pct:number};quality:{overall:number;completeness:number;validity:number;consistency:number;uniqueness:number;integrity:number};issues:QualityIssue[];ai?:{headline:string;summary:string;strengths:string[];risks:string[];actions:string[];data_readiness:number};refinement?:{applied:number;failed:number;quality_delta:number}|null};
 const authHeaders=()=>({Authorization:"Bearer "+(typeof window!=="undefined"?localStorage.getItem("rivu_access_token")||"":"")});
+
+
+const WORKSPACE = [
+  { href: "/dashboard/data-sources", label: "Data Sources", desc: "Ingest CSV, XLSX, JSON, Parquet", icon: UploadCloud },
+  { href: "/dashboard/refinery", label: "Data Refinery", desc: "Profile, clean, validate, transform", icon: Sparkles },
+  { href: "/dashboard/tools", label: "Tools Centre", desc: "14 tools, real processing", icon: Activity },
+  { href: "/dashboard/analytics", label: "Data Analytics", desc: "Operational KPIs from records", icon: Database },
+  { href: "/dashboard/visualization", label: "Data Visualization", desc: "Charts from real data", icon: Database },
+  { href: "/dashboard/intelligence", label: "AI Business Intelligence", desc: "Evidence-based answers", icon: Sparkles },
+  { href: "/dashboard/commerce", label: "Commerce & Catalogue", desc: "PIM, channels, publishing", icon: Database },
+  { href: "/dashboard/products", label: "Product & SKU", desc: "Create and inspect SKUs", icon: Database },
+  { href: "/dashboard/suppliers", label: "Supplier Management", desc: "Vendors and mappings", icon: Database },
+  { href: "/dashboard/integrations", label: "Integrations", desc: "Shopify and channels", icon: Database },
+  { href: "/dashboard/workflows", label: "Workflows", desc: "Jobs, runs, approvals", icon: Activity },
+  { href: "/dashboard/services", label: "Services", desc: "Projects and enquiries", icon: FileText },
+  { href: "/dashboard/reports", label: "Reports", desc: "PDF, JSON, executive", icon: FileText },
+  { href: "/dashboard/tools/compare", label: "Data Compare", desc: "Diff two datasets", icon: Activity },
+  { href: "/dashboard/billing", label: "Billing & Settings", desc: "Plans, invoices, usage", icon: Database },
+];
 
 export default function Dashboard(){
  const router = useRouter();
@@ -26,6 +46,21 @@ export default function Dashboard(){
   <header className={styles.topbar}><div><div className={styles.eyebrow}>RIVU / BUSINESS DATA INTELLIGENCE WORKSPACE</div><h1>Overview</h1><p>One unified workspace for ingestion, refinery, tools, analytics, AI intelligence, commerce and reporting.</p></div><div className={styles.headerActions}><button className={styles.iconBtn} onClick={()=>void load()}><RefreshCw size={15}/></button><button className={styles.primary} onClick={()=>setShowNew(true)}><Plus size={16}/> New project</button></div></header>
   {error&&<div className={styles.error}>{error}</div>}{message&&<div className={styles.message}>{message}</div>}<ProcessingRail active={uploading} label="Refining dataset"/>
   <section id="overview" className={styles.kpis}><Kpi label="Projects" value={projects.length}/><Kpi label="Datasets" value={projects.reduce((a,p)=>a+p.dataset_count,0)}/><Kpi label="Refinery" value="AI ready"/><Kpi label="Workspace" value="Unified"/></section>
+  <section id="workspace-map" className={styles.sectionBlock}>
+    <div className={styles.sectionTitle}><div><span>WORKSPACE</span><b>Every area in one place</b></div></div>
+    <div className={styles.grid4} style={{marginTop:12}}>
+      {WORKSPACE.map((w) => {
+        const Icon = w.icon;
+        return (
+          <Link key={w.href} href={w.href} className={styles.card} style={{textDecoration:"none",color:"inherit",display:"grid",gap:6}}>
+            <Icon size={16} />
+            <b style={{fontSize:12}}>{w.label}</b>
+            <span style={{fontSize:10,color:"var(--muted)"}}>{w.desc}</span>
+          </Link>
+        );
+      })}
+    </div>
+  </section>
   <section id="datasets" className={styles.workspace}><div className={styles.projectPane}><div className={styles.sectionTitle}><span>PROJECTS</span><button onClick={()=>setShowNew(true)}><Plus size={14}/></button></div>{loading?<div className={styles.muted}>Loading workspace…</div>:projects.map(p=><button key={p.id} className={selected?.id===p.id?styles.projectSelected:styles.project} onClick={()=>selectProject(p)}><i style={{background:p.color||"#6657d9"}}>R</i><span><b>{p.name}</b><small>{p.dataset_count} datasets</small></span><ArrowUpRight size={14}/></button>)}</div>
   <div className={styles.dataPane}><div className={styles.sectionTitle}><div><span>DATASETS</span><b>{selected?.name||"Select a project"}</b></div>{selected&&<label className={styles.upload}><UploadCloud size={15}/>{uploading?"Uploading…":"Upload data"}<input type="file" accept=".csv,.json,.xlsx,.xls,.parquet" onChange={upload} disabled={uploading}/></label>}</div>{selected&&<div className={styles.drop}><UploadCloud size={22}/><div><b>Drop a dataset to refine</b><small>CSV · XLSX · JSON · Parquet · up to 500 MB</small></div><label>Browse<input type="file" accept=".csv,.json,.xlsx,.xls,.parquet" onChange={upload}/></label></div>}<div className={styles.datasetList}>{datasets.map(d=><div className={styles.dataset} key={d.id}><div className={styles.file}><FileText size={16}/></div><div className={styles.datasetName}><b>{d.name}</b><small>{d.original_filename} · v{d.current_version}</small></div><span className={d.status==="transformed"?styles.ready:styles.status}>{d.status}</span><button onClick={()=>openIntelligence(d)}>Inspect <ArrowUpRight size={13}/></button></div>)}</div></div></section>
   <section id="intelligence" className={styles.reportShell}><div className={styles.reportHead}><div><div className={styles.eyebrow}>LIVE DATA INTELLIGENCE</div><h2>{intelligence?intelligence.ai?.headline||"Dataset intelligence":"Select a dataset to inspect"}</h2><p>{intelligence?intelligence.ai?.summary||"Measured quality and AI analysis.":"Quality, refinement impact and AI analysis in one operational view."}</p></div>{intelligence&&<button className={styles.primary} onClick={()=>router.push("/dashboard/dataset/"+intelligence.dataset.id)}>Open full report <ArrowUpRight size={15}/></button>}</div>
