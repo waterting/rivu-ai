@@ -76,3 +76,118 @@
 @media(max-width:700px){.topNav{height:68px!important;padding:0 18px!important}.topNavLinks{display:none}.topNavRight span,.topNavRight>svg{display:none}.heroTop{padding:0 20px;align-items:flex-start;flex-direction:column;margin-top:28px}.heroActions{width:100%}.heroActions button{flex:1;padding:0 10px!important}.hero{padding:0 20px!important;margin-top:42px!important}.hero h1{font-size:45px!important;letter-spacing:-2.4px!important}.datasetTabs{margin-left:20px!important;margin-right:20px!important;padding:0;grid-template-columns:repeat(2,1fr)}.datasetTabs a{min-height:62px}.scoreRow{padding:0 20px}.reportPanel,.analytics,.panel,.analyticsGridWide,.downloadPanel,.plan{margin-left:20px!important;margin-right:20px!important}}
 
 .cleanedDownload{min-height:52px!important;padding:0 20px!important;border-radius:12px!important;border:1px solid #7d5ce9!important;background:linear-gradient(135deg,#5b39c7,#8b63f2)!important;color:#fff!important;font-weight:650!important;letter-spacing:.2px!important;box-shadow:0 12px 28px rgba(99,66,215,.25)!important}.cleanedDownload:hover{transform:translateY(-1px)!important;filter:brightness(1.06)}
+
+/* ==========================================================================
+   Readability floor for the dataset workspace (same rules as the rest of the
+   product). The page keeps its own layout; only type sizes and containment
+   change.
+   ========================================================================== */
+.secure,
+.kicker,
+.panelHead small,
+.score small,
+.stat small,
+.quality > div,
+.issues p,
+.ops span,
+.ops p,
+.aiReportGrid h4,
+.aiReportGrid p,
+.chartTitle span,
+.analyticsNote,
+.impact small,
+.downloadPanel small,
+.searchBox input,
+.explorerMeta,
+.previewRow > * {
+  font-size: 11.5px !important;
+  letter-spacing: 0.02em !important;
+}
+
+.kicker,
+.panelHead small,
+.chartTitle span,
+.downloadPanel small,
+.impact small {
+  letter-spacing: 0.08em !important;
+}
+
+.quality > div { grid-template-columns: 104px 1fr 44px !important; }
+
+/* Matrices are wide by nature: keep them inside their own scroll container so
+   the page itself never scrolls sideways. */
+.matrixHead,
+.matrixRow { min-width: 560px !important; }
+
+.matrixHead { border-radius: 8px 8px 0 0; }
+
+.matrixScroll,
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+@media (max-width: 760px) {
+  .page { padding-left: 2px !important; padding-right: 2px !important; }
+  .previewRow > * { font-size: 11.5px !important; max-width: 100% !important; }
+  .chartRow,
+  .analyticsGrid { grid-template-columns: minmax(0, 1fr) !important; }
+}
+
+/* The health matrix is a fixed-column grid, so give its container the scroll
+   rather than letting it push the page sideways. */
+.healthMatrix {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+/* Score tiles wrap instead of scrolling on small screens. */
+.reportScoreRow {
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+  gap: 8px !important;
+}
+
+.reportScoreRow > div {
+  min-width: 0 !important;
+  flex: 1 1 130px !important;
+  padding: 10px 12px !important;
+}
+
+.reportScoreRow small { font-size: 11px !important; letter-spacing: 0.06em !important; }
+.reportScoreRow b { font-size: 17px; }
+
+/* Pagination controls */
+.pager button,
+.pageBtn,
+.pager span {
+  font-size: 12px !important;
+}
+
+@media (max-width: 560px) {
+  .reportScoreRow > div { flex: 1 1 45% !important; }
+}
+
+/* Pagination text was 9px; keep it readable and tappable. */
+.pagination button {
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  min-height: 32px;
+}
+
+.pagination span { font-size: 12px !important; }
+
+.matrixHead,
+.matrixRow { font-size: 11.5px !important; }
+
+/* Download chips were 24px tall; keep them at a comfortable tap size. */
+.downloadPanel button,
+.downloadPanel a {
+  min-height: 32px !important;
+  font-size: 12px !important;
+  padding: 8px 11px !important;
+  letter-spacing: 0 !important;
+}

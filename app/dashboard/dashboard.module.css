@@ -61,3 +61,266 @@ html[data-theme="light"] .formGrid input, html[data-theme="light"] .formGrid sel
 
 /* MOBILE_SHELL */
 @media(max-width:1000px){.sidebar{display:flex;position:fixed;left:0;top:0;bottom:0;z-index:40;width:260px;transform:translateX(-100%);transition:transform .22s ease}.sidebarOpen{transform:translateX(0)}.mobileMenuBtn{display:block}}
+/* ==========================================================================
+   Workspace shell — grouped navigation (appended overrides, win by order).
+   ========================================================================== */
+.app {
+  --bg: #07080b;
+  --line: rgba(255, 255, 255, 0.07);
+  --text: #e9ecf1;
+  --muted: #79828f;
+  background: var(--bg);
+  align-items: flex-start;
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  flex: 0 0 244px;
+  width: 244px;
+  height: 100vh;
+  box-sizing: border-box;
+  padding: 18px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-right: 1px solid var(--line);
+  background: #0a0c11;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.brandWrap { padding: 2px 8px 16px; }
+
+.workspaceButton {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+  color: inherit;
+  cursor: default;
+}
+
+.workspaceButton > span:nth-child(2) { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.workspaceButton small { font-size: 9px; letter-spacing: 0.12em; color: #6b7482; font-weight: 650; }
+.workspaceButton b { font-size: 12px; font-weight: 580; color: #e9ecf1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspaceButton > svg { display: none; }
+
+.workspaceIcon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: rgba(139, 123, 255, 0.14);
+  color: #c0b6ff;
+  flex-shrink: 0;
+}
+
+.sidebar nav { display: grid; gap: 2px; }
+
+.navGroup { display: grid; gap: 1px; margin-bottom: 12px; }
+
+.navGroupTitle {
+  padding: 6px 10px 5px;
+  font-size: 9.5px;
+  font-weight: 680;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: #5b6472;
+}
+
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  color: #9aa3b0;
+  text-decoration: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar nav a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar nav a svg { flex-shrink: 0; opacity: 0.85; }
+
+.sidebar nav a:hover { background: rgba(255, 255, 255, 0.045); color: #e9ecf1; }
+
+.sidebar nav a.active {
+  background: rgba(139, 123, 255, 0.14);
+  color: #ddd6ff;
+  font-weight: 560;
+}
+
+.sidebar nav a.active svg { opacity: 1; color: #b9aeff; }
+.sidebar nav a:focus-visible { outline: 2px solid #8b7bff; outline-offset: -2px; }
+
+.sideFoot { margin-top: auto; padding-top: 10px; display: grid; gap: 2px; border-top: 1px solid var(--line); }
+
+.secure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 10.5px;
+  color: #5b6472;
+}
+
+.sideFoot button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: #8b94a1;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sideFoot button:hover { background: rgba(255, 255, 255, 0.045); color: #e9ecf1; }
+
+.main {
+  flex: 1;
+  width: auto;
+  max-width: none;
+  min-width: 0;
+  margin: 0;
+  padding: 26px 32px 64px;
+  box-sizing: border-box;
+}
+
+.mobileMenuBtn { display: none; }
+
+.scrim { display: none; }
+
+@media (max-width: 1180px) {
+  .main { padding: 22px 24px 56px; }
+}
+
+@media (max-width: 1000px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 60;
+    width: 264px;
+    height: 100%;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 24px 0 60px -30px rgba(0, 0, 0, 0.9);
+  }
+  .sidebarOpen { transform: translateX(0); }
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(4, 6, 9, 0.6);
+    backdrop-filter: blur(2px);
+  }
+  .mobileMenuBtn {
+    display: grid;
+    place-items: center;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 65;
+    width: 36px;
+    height: 36px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9px;
+    background: #12161d;
+    color: #e9ecf1;
+    cursor: pointer;
+  }
+  .main { padding: 64px 16px 48px; }
+}
+
+@media (max-width: 560px) {
+  .main { padding: 60px 13px 40px; }
+}
+
+/* ==========================================================================
+   Readability floor for every workspace page.
+   The audit found 9-10px labels on several screens; nothing in a business
+   product should render below 11px. These overrides raise the floor without
+   touching page markup.
+   ========================================================================== */
+.app small { font-size: 11px !important; }
+.app .eyebrow { font-size: 11px !important; letter-spacing: 0.08em !important; }
+.app .navGroupTitle { font-size: 11px !important; letter-spacing: 0.09em !important; }
+.app th { font-size: 11px !important; }
+.app label { font-size: 12px !important; }
+.app .kpi span,
+.app .metricCard span,
+.app .sectionTitle span,
+.app .workspaceButton small { font-size: 11px !important; }
+.app .kpi small,
+.app .metricCard small { font-size: 11px !important; }
+
+/* Tables keep a visible edge so horizontal scrolling reads as intentional. */
+.app .tableWrap,
+.app [class*="tableScroll"] {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .app table { min-width: 520px; }
+  .app .tableWrap {
+    background: linear-gradient(to right, transparent, transparent) left / 0 0 no-repeat;
+  }
+}
+
+/* Long unbroken values (SKU codes, URLs) must never force a page sideways. */
+.app { overflow-x: hidden; }
+.app table { table-layout: auto; }
+.app td, .app th { overflow-wrap: anywhere; }
+
+/* Micro-labels: every legacy page used 9px for section labels. Raise them to
+   the same floor as the rest of the product. */
+.app .workspaceLabel,
+.app .sectionTitle span,
+.app .project small,
+.app .dataset small,
+.app .drop small,
+.app .scoreCard span,
+.app .metricCard span,
+.app .metricCard small,
+.app .aiLists h4,
+.app .bar > div,
+.app .reportActions button,
+.app .toolCard span,
+.app .emptyReport span {
+  font-size: 11px !important;
+  letter-spacing: 0.06em !important;
+}
+
+.app .aiLists h4 { letter-spacing: 0.08em !important; }
+.app .reportActions button { letter-spacing: 0 !important; font-weight: 600 !important; }
+
+.app .statusLive,
+.app .statusPartial,
+.app .statusPlanned {
+  font-size: 11px !important;
+  letter-spacing: 0.04em !important;
+  padding: 3px 9px !important;
+  font-weight: 600 !important;
+}

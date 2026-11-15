@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -229,7 +229,7 @@ export default function ChannelsPage() {
                     <span style={{ fontSize: 10, fontWeight: 700, color: "#a59bff", letterSpacing: 1 }}>
                       {c.channel_type.toUpperCase()}
                     </span>
-                    <span style={{ fontSize: 9, background: "#11261d", color: "#7de1b1", padding: "3px 8px", borderRadius: 12 }}>
+                    <span style={{ fontSize: 11, background: "#11261d", color: "#7de1b1", padding: "3px 8px", borderRadius: 12 }}>
                       {c.status.toUpperCase()}
                     </span>
                   </div>
@@ -311,7 +311,7 @@ export default function ChannelsPage() {
 
                 <div>
                   <label style={{ fontSize: 10, color: "var(--muted)" }}>
-                    Admin API Access Token (required — real Shopify custom-app token)
+                    Admin API Access Token (required â€” real Shopify custom-app token)
                   </label>
                   <input
                     type="password"
@@ -320,7 +320,7 @@ export default function ChannelsPage() {
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
                   />
-                  <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
                     A real token is required. Sandbox/placeholder tokens are only accepted outside production.
                   </div>
                 </div>
