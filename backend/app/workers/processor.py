@@ -16,6 +16,35 @@ from app.core.config import settings
 logger = structlog.get_logger(__name__)
 
 
+async def persist_detected_presentation(db, version_uuid, parse_meta: dict) -> bool:
+    """Store the source encoding/delimiter detected while parsing a version.
+
+    Returns True when the stored version was updated. Kept separate from the
+    pipeline so the persistence contract is unit-testable without a database.
+    """
+    from sqlalchemy import select
+
+    from app.models.dataset import DatasetVersion
+
+    encoding = parse_meta.get("encoding")
+    delimiter = parse_meta.get("delimiter")
+    if not encoding and not delimiter:
+        return False
+
+    stored = (
+        await db.execute(select(DatasetVersion).where(DatasetVersion.id == version_uuid))
+    ).scalar_one_or_none()
+    if stored is None:
+        return False
+    if stored.encoding == encoding and stored.delimiter == delimiter:
+        return False
+
+    stored.encoding = encoding
+    stored.delimiter = delimiter
+    await db.commit()
+    return True
+
+
 async def process_dataset_async(
     job_id: str,
     version_id: str,
@@ -65,6 +94,11 @@ async def process_dataset_async(
             job.progress_pct = 20
             job.progress_message = "Profiling dataset..."
             await db.commit()
+
+            # ── Persist detected presentation ───────────
+            # Encoding/delimiter are needed to re-read or re-export this exact
+            # version later; without them a CSV round trip is not reproducible.
+            await persist_detected_presentation(db, version_uuid, parse_meta)
 
             # ── Profile ───────────────────────────────
             try:

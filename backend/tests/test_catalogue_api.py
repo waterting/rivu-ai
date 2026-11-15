@@ -25,7 +25,23 @@ async def dummy_session():
     mock_session.add = Mock()
     yield mock_session
 
-app.dependency_overrides[get_catalogue_session] = dummy_session
+
+@pytest.fixture(autouse=True)
+def catalogue_overrides():
+    """Install the stub session per test.
+
+    Registering at import time is unsafe: other modules call
+    ``app.dependency_overrides.clear()``, which would drop these stubs before
+    this module's tests run and make the real DB-backed dependency answer.
+    The authenticated-user override stays per-test so the unauthenticated
+    test still exercises the real 401 path.
+    """
+    app.dependency_overrides[get_catalogue_session] = dummy_session
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_catalogue_session, None)
+        app.dependency_overrides.pop(get_current_catalogue_user, None)
 
 
 class MockUser:

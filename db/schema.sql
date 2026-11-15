@@ -177,6 +177,8 @@ CREATE TABLE dataset_versions (
   storage_key       TEXT NOT NULL,  -- S3 object key
   storage_bucket    TEXT NOT NULL,
   file_format       VARCHAR(20) NOT NULL,  -- csv, parquet, json
+  encoding          VARCHAR(40),    -- detected source encoding, e.g. utf-8-sig
+  delimiter         VARCHAR(8),     -- detected CSV delimiter, e.g. ',', ';', '\t'
   file_size_bytes   BIGINT,
   row_count         INTEGER,
   column_count      INTEGER,

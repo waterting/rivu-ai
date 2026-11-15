@@ -59,6 +59,8 @@ class DatasetVersionResponse(BaseModel):
     version_number: int
     version_label: Optional[str]
     file_format: str
+    encoding: Optional[str]
+    delimiter: Optional[str]
     file_size_bytes: Optional[int]
     row_count: Optional[int]
     column_count: Optional[int]

@@ -77,6 +77,10 @@ class DatasetVersion(Base):
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
     storage_bucket: Mapped[str] = mapped_column(Text, nullable=False)
     file_format: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Detected presentation of the source file, persisted so a version can be
+    # re-read or re-exported with byte-identical encoding/delimiter (audit #5).
+    encoding: Mapped[str | None] = mapped_column(String(40))
+    delimiter: Mapped[str | None] = mapped_column(String(8))
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     row_count: Mapped[int | None] = mapped_column(Integer)
     column_count: Mapped[int | None] = mapped_column(Integer)
