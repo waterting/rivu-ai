@@ -28,11 +28,27 @@ yarn-debug.log*
 yarn-error.log*
 
 # Environment
+# Any .env* variant is local-only; only the committed *.example templates ship.
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.*.example
+*.env
+
+# Secrets and key material (never commit real credentials or certificates)
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+id_rsa
+id_ed25519
+secrets.json
+secrets.yaml
+secrets.yml
+credentials.json
+service-account*.json
+.envrc
 
 # IDE
 .idea/
