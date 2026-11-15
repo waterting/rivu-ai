@@ -14,7 +14,7 @@ const TOOLS = [
   { id: "enrichment", name: "AI Product Enrichment", icon: Sparkles, status: "live", desc: "Groq-backed enrichment with rule-based fallback (advisory).", href: "/our-solutions/catalogue-data-entry" },
   { id: "catalogue-normalizer", name: "Catalogue Normalizer", icon: Boxes, status: "live", desc: "Normalize catalogue fields per target template.", href: "/our-solutions/catalogue-data-entry" },
   { id: "duplicate-finder", name: "Duplicate Finder", icon: CopyCheck, status: "live", desc: "Flag/remove duplicates via refinery transform ops.", href: "/dashboard/refinery" },
-  { id: "compare", name: "Data Compare", icon: GitCompare, status: "partial", desc: "Compare datasets/versions — basic diff via version comparison (full UI in progress).", href: "/dashboard" },
+  { id: "compare", name: "Data Compare", icon: GitCompare, status: "live", desc: "Diff two profiled datasets: rows, columns, nulls, duplicates, column types and null-rate shifts.", href: "/dashboard/tools/compare" },
   { id: "sku-manager", name: "SKU & Variant Manager", icon: ScanBarcode, status: "live", desc: "PIM product & variant records (create/list via Commerce API).", href: "/dashboard/products" },
   { id: "media-matcher", name: "Media Matcher", icon: Images, status: "planned", desc: "Match product media to SKUs — requires a defined matching spec; not yet automated.", href: "/dashboard/products" },
   { id: "bulk-exporter", name: "Bulk Exporter", icon: Download, status: "live", desc: "Bulk catalogue export (XLSX/CSV/JSON) from Catalogue portal.", href: "/our-solutions/catalogue-data-entry" },

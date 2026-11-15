@@ -31,7 +31,7 @@ export default function RefineryPage() {
         </div>
         <div style={{marginTop:18,display:"flex",gap:10}}>
           <Link href="/dashboard" className={styles.primary} style={{textDecoration:"none",display:"inline-flex"}}>Open a dataset <ArrowUpRight size={14}/></Link>
-          <Link href="/dashboard/dataset" className={styles.iconBtn} style={{textDecoration:"none",display:"inline-flex"}}><Download size={14}/> Export from dataset view</Link>
+          <Link href="/dashboard" className={styles.iconBtn} style={{textDecoration:"none",display:"inline-flex"}}><Download size={14}/> Export from dataset view</Link>
         </div>
       </section>
     </div>
