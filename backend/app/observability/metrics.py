@@ -219,3 +219,14 @@ job_failures_total = registry.counter(
     "Jobs that exhausted their retry budget, by job type.",
     ("job_type",),
 )
+
+ai_requests_total = registry.counter(
+    "rivu_ai_requests_total",
+    "AI provider calls, by provider and outcome.",
+    ("provider", "outcome"),
+)
+ai_request_duration_seconds = registry.histogram(
+    "rivu_ai_request_duration_seconds",
+    "AI provider call latency in seconds, by provider.",
+    ("provider",),
+)

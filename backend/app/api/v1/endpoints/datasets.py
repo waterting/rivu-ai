@@ -62,6 +62,50 @@ def is_safe_storage_key(storage_key: str, base_key: str) -> bool:
     return True
 
 
+async def _derive_artifact(storage, version: DatasetVersion, stem: str, requested: str, prefix: str) -> str | None:
+    """Generate a non-canonical artifact on demand from the canonical one.
+
+    Refined versions store one canonical artifact; a request for another format
+    is served by reading the canonical, re-parsing it and writing the requested
+    format. Returns the new object key, or None when the canonical cannot be
+    read or the format is unsupported.
+    """
+    from app.ingestion.artifacts import content_type_for, dataframe_to_bytes
+    from app.ingestion.parser import parse_to_polars
+
+    canonical_key = version.storage_key
+    try:
+        raw = await storage.download_file(canonical_key)
+        df, _meta = parse_to_polars(raw, version.file_format, canonical_key)
+        data = dataframe_to_bytes(df, requested)
+    except Exception:
+        logger.warning(
+            "artifact_derive_failed",
+            version_id=str(version.id),
+            requested=requested,
+            canonical=canonical_key,
+        )
+        return None
+
+    key = f"{prefix}/{stem}.{requested}"
+    try:
+        await storage.upload_file(
+            key,
+            data,
+            content_type_for(requested),
+            {
+                "org_id": str(version.organization_id),
+                "dataset_id": str(version.data_source_id),
+                "derived_from": canonical_key,
+                "derived_format": requested,
+            },
+        )
+    except Exception:
+        logger.warning("artifact_derive_upload_failed", key=key, requested=requested)
+        return None
+    return key
+
+
 async def _run_inline_job(
     job_id: str,
     version_id: str,
@@ -397,21 +441,27 @@ async def export_dataset(
         candidate_key = f"{prefix}/{stem}.{requested}"
         storage = get_storage()
         if not await storage.file_exists(candidate_key):
-            await record_event(
-                db,
-                action=DOWNLOAD_URL_DENIED,
-                resource_type="dataset_version",
-                resource_id=str(version.id),
-                organization_id=org_id,
-                actor_id=current_user.id,
-                details={"reason": "artifact_missing", "requested": requested},
-                ip_address=client_ip(request),
-                user_agent=client_user_agent(request),
-            )
-            raise HTTPException(
-                status_code=404,
-                detail={"message": f"{requested.upper()} artifact is not available for this version"},
-            )
+            # Refined versions store only the canonical artifact plus the schema
+            # sidecar; derive the requested format on demand from the canonical
+            # instead of pre-writing every format (audit finding 12).
+            derived = await _derive_artifact(storage, version, stem, requested, prefix)
+            if derived is None:
+                await record_event(
+                    db,
+                    action=DOWNLOAD_URL_DENIED,
+                    resource_type="dataset_version",
+                    resource_id=str(version.id),
+                    organization_id=org_id,
+                    actor_id=current_user.id,
+                    details={"reason": "artifact_missing", "requested": requested},
+                    ip_address=client_ip(request),
+                    user_agent=client_user_agent(request),
+                )
+                raise HTTPException(
+                    status_code=404,
+                    detail={"message": f"{requested.upper()} artifact is not available for this version"},
+                )
+            candidate_key = derived
         storage_key = candidate_key
         output_format = requested
 

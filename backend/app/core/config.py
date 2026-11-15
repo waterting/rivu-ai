@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
     DEFAULT_AI_PROVIDER: str = Field(default="groq", validate_default=True)
 
+    # Hard ceiling on a single AI request inside a synchronous report path. A
+    # slow or hung provider must degrade to the measured fallback, not block the
+    # worker (audit finding 11).
+    AI_REQUEST_TIMEOUT_SECONDS: float = 20.0
+
     S3_ENDPOINT: str = "http://localhost:9000"
     S3_ACCESS_KEY: str = "minioadmin"
     S3_SECRET_KEY: str = "minioadmin"
@@ -79,6 +84,11 @@ class Settings(BaseSettings):
     # the deployment. Invoices will carry an empty provider GSTIN until set.
     BUSINESS_LEGAL_NAME: str = ""
     BUSINESS_GSTIN: str = ""
+
+    # Optional raster logo (PNG/JPG) embedded in generated PDF reports. When
+    # empty or unreadable the PDF falls back to the built-in vector wordmark, so
+    # a report always carries the brand mark (audit finding 10).
+    BRAND_LOGO_PATH: str = ""
 
     MAX_UPLOAD_SIZE_MB: int = 500
     MAX_PROFILE_SAMPLE_ROWS: int = 100_000

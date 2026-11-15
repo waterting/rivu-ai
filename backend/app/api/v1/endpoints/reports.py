@@ -1,19 +1,22 @@
 ﻿"""Downloadable dataset reports."""
-import io, json
+import asyncio, io, json
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.audit.service import (
     DOWNLOAD_URL_ISSUED,
     client_ip,
     client_user_agent,
     record_event,
 )
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.storage import get_storage
 from app.core.security import get_current_user
+from app.core.config import settings
 from app.api.v1.endpoints.datasets import download_url_ttl_seconds
 from app.models.user import User
 from app.models.organization import Membership
@@ -26,6 +29,19 @@ from app.ai.base import AIMessage
 from app.ingestion.parser import parse_to_polars
 
 router=APIRouter()
+
+
+async def _ai_with_timeout(coro, *, timeout: float | None = None):
+    """Await an AI call but give up after a bounded time.
+
+    Report generation is on the synchronous request path; a hung provider must
+    not pin a worker. The caller's own try/except turns the timeout into the
+    deterministic fallback so the report still renders.
+    """
+    limit = settings.AI_REQUEST_TIMEOUT_SECONDS if timeout is None else timeout
+    return await asyncio.wait_for(coro, timeout=limit)
+
+
 async def build_ai_report(facts: dict, fallback_score: float) -> dict:
     """Build a fact-grounded Rivu executive intelligence report."""
     prompt = """You are Rivu AI's senior data intelligence analyst.
@@ -42,10 +58,10 @@ Do not praise the product. The report is about the dataset.
 FACTS:
 """ + json.dumps(facts, default=str)
     try:
-        response = await get_ai_provider().complete_json([
+        response = await _ai_with_timeout(get_ai_provider().complete_json([
             AIMessage("system", "You are Rivu's senior data intelligence analyst. Be rigorous, factual and decision-useful."),
             AIMessage("user", prompt),
-        ], temperature=0.1, max_tokens=2800)
+        ], temperature=0.1, max_tokens=2800))
         try:
             ai = json.loads(response.content)
         except Exception:
@@ -54,22 +70,77 @@ FACTS:
     except Exception as exc:
         return {"headline":"Dataset intelligence","executive_summary":"The measured dataset profile and quality scores remain authoritative. AI narrative generation is temporarily unavailable.","data_story":"Use the measured quality dimensions and issue register below as the source of truth.","key_findings":[],"risk_analysis":[],"recommended_actions":[],"strengths":[],"risks":[],"actions":[],"data_readiness":fallback_score,"confidence_note":"AI narrative unavailable; measured metrics remain authoritative.","error":str(exc)[:300]}
 
+def _draw_vector_wordmark(canvas, x, y, scale=1.0):
+    """Draw the Rivu AI mark as crisp vector primitives.
+
+    Used when no raster logo is configured so every report still carries a
+    recognizable brand mark instead of a generic header.
+    """
+    from reportlab.lib.units import mm
+    s = scale
+    canvas.setFillColorRGB(0.12, 0.08, 0.16)
+    canvas.rect(x, y, 7*mm*s, 7*mm*s, fill=1, stroke=0)
+    canvas.setFillColorRGB(0.55, 0.34, 0.95)
+    canvas.rect(x+8*mm*s, y, 7*mm*s, 7*mm*s, fill=1, stroke=0)
+    canvas.rect(x, y-8*mm*s, 7*mm*s, 7*mm*s, fill=1, stroke=0)
+    canvas.setFillColorRGB(0.12, 0.08, 0.16)
+    canvas.rect(x+8*mm*s, y-8*mm*s, 7*mm*s, 7*mm*s, fill=1, stroke=0)
+    canvas.setFillColorRGB(0.10, 0.08, 0.13)
+    canvas.setFont("Helvetica-Bold", 15*s)
+    canvas.drawString(x+18*mm*s, y-2*mm*s, "rivu")
+    canvas.setFillColorRGB(0.55, 0.34, 0.95)
+    canvas.setFont("Helvetica", 15*s)
+    canvas.drawString(x+43*mm*s, y-2*mm*s, "ai")
+
+
+def _draw_raster_logo(canvas, path, x, y, max_w, max_h):
+    """Draw a configured raster logo, scaled to fit within the given box.
+
+    Returns True on success, False when the file is missing or unreadable so the
+    caller can fall back to the vector wordmark.
+    """
+    import os
+
+    from reportlab.lib.utils import ImageReader
+
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        reader = ImageReader(path)
+        iw, ih = reader.getSize()
+        if not iw or not ih:
+            return False
+        scale = min(max_w / iw, max_h / ih)
+        canvas.drawImage(reader, x, y, width=iw * scale, height=ih * scale, mask="auto")
+        return True
+    except Exception:
+        return False
+
+
 def draw_rivu_brand(canvas, doc):
-    """Draw the Rivu AI mark on every generated report page."""
+    """Draw the Rivu AI mark on every generated report page.
+
+    Embeds the configured raster logo when present; otherwise draws the vector
+    wordmark so the report is never unbranded (audit finding 10).
+    """
     canvas.saveState()
     from reportlab.lib.units import mm
+
     x, y = 18*mm, 282*mm
-    canvas.setFillColorRGB(0.12, 0.08, 0.16)
-    canvas.rect(x, y, 7*mm, 7*mm, fill=1, stroke=0)
-    canvas.setFillColorRGB(0.55, 0.34, 0.95)
-    canvas.rect(x+8*mm, y, 7*mm, 7*mm, fill=1, stroke=0)
-    canvas.rect(x, y-8*mm, 7*mm, 7*mm, fill=1, stroke=0)
-    canvas.setFillColorRGB(0.12, 0.08, 0.16)
-    canvas.rect(x+8*mm, y-8*mm, 7*mm, 7*mm, fill=1, stroke=0)
-    canvas.setFillColorRGB(0.10,0.08,0.13); canvas.setFont("Helvetica-Bold",15); canvas.drawString(x+18*mm,y-2*mm,"rivu")
-    canvas.setFillColorRGB(0.55,0.34,0.95); canvas.setFont("Helvetica",15); canvas.drawString(x+43*mm,y-2*mm,"ai")
-    canvas.setStrokeColorRGB(0.86,0.85,0.90); canvas.line(18*mm,13*mm,192*mm,13*mm)
-    canvas.setFillColorRGB(0.42,0.41,0.48); canvas.setFont("Helvetica",7); canvas.drawRightString(192*mm,8*mm,"Rivu AI Â· Confidential data intelligence Â· Page %d" % doc.page)
+    logo_path = settings.BRAND_LOGO_PATH
+    if _draw_raster_logo(canvas, logo_path, x, y - 2*mm, 60*mm, 14*mm):
+        # Reserve the same footprint as the wordmark so layout stays consistent.
+        pass
+    else:
+        _draw_vector_wordmark(canvas, x, y, scale=1.0)
+    canvas.setStrokeColorRGB(0.86, 0.85, 0.90)
+    canvas.line(18*mm, 13*mm, 192*mm, 13*mm)
+    canvas.setFillColorRGB(0.42, 0.41, 0.48)
+    canvas.setFont("Helvetica", 7)
+    canvas.drawRightString(
+        192*mm, 8*mm,
+        "Rivu AI · Confidential data intelligence · Page %d" % doc.page,
+    )
     canvas.restoreState()
 
 @router.get("/{dataset_id}/json")
@@ -218,7 +289,7 @@ Consistency: {float(quality.consistency_score or 0) if quality else 0}
 Uniqueness: {float(quality.uniqueness_score or 0) if quality else 0}
 Issues: {len(issues)}
 Refinement: {refinement_summary}"""
-        ai_resp=await get_ai_provider().complete([AIMessage("system","You are Rivu's senior data analyst. Return one professional paragraph."),AIMessage("user",ai_prompt)],temperature=0.1,max_tokens=500)
+        ai_resp=await _ai_with_timeout(get_ai_provider().complete([AIMessage("system","You are Rivu's senior data analyst. Return one professional paragraph."),AIMessage("user",ai_prompt)],temperature=0.1,max_tokens=500))
         ai_summary=ai_resp.content.strip()
     except Exception:
         pass

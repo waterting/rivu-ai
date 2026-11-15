@@ -8,6 +8,7 @@ import structlog
 from app.ai.base import AIProvider, AIMessage, AIResponse
 from app.core.config import settings
 from app.core.exceptions import AIError
+from app.observability.metrics import ai_request_duration_seconds, ai_requests_total
 
 logger = structlog.get_logger(__name__)
 
@@ -65,6 +66,8 @@ class GroqProvider(AIProvider):
         try:
             response = await client.chat.completions.create(**kwargs)
             latency_ms = round((time.perf_counter() - start) * 1000)
+            ai_request_duration_seconds.observe(latency_ms / 1000.0, provider="groq")
+            ai_requests_total.inc(provider="groq", outcome="ok")
 
             content = response.choices[0].message.content or ""
             usage = response.usage
@@ -87,5 +90,8 @@ class GroqProvider(AIProvider):
             )
 
         except Exception as e:
+            latency_ms = round((time.perf_counter() - start) * 1000)
+            ai_request_duration_seconds.observe(latency_ms / 1000.0, provider="groq")
+            ai_requests_total.inc(provider="groq", outcome="error")
             logger.error("groq_error", error=str(e))
             raise AIError(f"Groq API error: {e}") from e

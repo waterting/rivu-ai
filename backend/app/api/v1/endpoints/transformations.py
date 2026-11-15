@@ -1,5 +1,4 @@
 ﻿"""Approved transformation execution and preview endpoints."""
-import io
 import json
 from datetime import datetime, timezone
 from uuid import UUID
@@ -273,7 +272,7 @@ async def execute_plan(
     plan.status = "running"
     await db.flush()
 
-    df, source_raw = await _load_dataframe(source_version)
+    df, _source_raw = await _load_dataframe(source_version)
     operations = plan.operations
     if body.operation_indexes is not None:
         operations = [operations[i] for i in body.operation_indexes if 0 <= i < len(operations)]
@@ -311,78 +310,64 @@ async def execute_plan(
     artifact_root = f"orgs/{org}/projects/{ds.project_id}/datasets/{ds.id}/v{next_version}"
     metadata = {"org_id": str(org), "dataset_id": str(ds.id), "parent_version": str(source_version.version_number), "transformation_run": str(run.id)}
 
-    def make_csv():
-        buf = io.BytesIO(); output_df.write_csv(buf); return buf.getvalue()
-    def make_json():
-        return output_df.write_json().encode("utf-8")
-    def make_parquet():
-        buf = io.BytesIO(); output_df.write_parquet(buf); return buf.getvalue()
-    def make_xlsx():
-        # Preserve the source workbook's other sheets and workbook container.
-        # Rivu transforms the data sheet while leaving unrelated sheets intact.
-        from openpyxl import load_workbook
-        workbook = load_workbook(io.BytesIO(source_raw))
-        sheet = workbook[workbook.sheetnames[0]]
-        if sheet.max_row > 0:
-            sheet.delete_rows(1, sheet.max_row)
-        for col_index, name in enumerate(output_df.columns, start=1):
-            sheet.cell(row=1, column=col_index, value=name)
-        for row_index, row in enumerate(output_df.iter_rows(), start=2):
-            for col_index, value in enumerate(row, start=1):
-                if hasattr(value, "isoformat") and not isinstance(value, str):
-                    value = value.isoformat()
-                sheet.cell(row=row_index, column=col_index, value=value)
-        buf = io.BytesIO(); workbook.save(buf); return buf.getvalue()
-    schema_payload = {
-        "version": next_version,
-        "row_count": output_df.height,
-        "column_count": output_df.width,
-        "columns": [{"name": n, "dtype": str(d), "nullable": bool(output_df[n].null_count() > 0)} for n, d in output_df.schema.items()],
-    }
-    artifact_builders = {
-        "csv": (make_csv, "text/csv"),
-        "json": (make_json, "application/json"),
-        "parquet": (make_parquet, "application/octet-stream"),
-        "xlsx": (make_xlsx, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-        "schema.json": (lambda: json.dumps(schema_payload, indent=2).encode("utf-8"), "application/json"),
-    }
-    artifacts = {}
+    # Only the canonical artifact (the refined output in its native format) and
+    # the small schema.json sidecar are stored eagerly. Other formats are derived
+    # on demand at export time from the canonical, so a refinement no longer
+    # writes N full copies of the same rows (audit finding 12).
+    from app.ingestion.artifacts import (
+        canonical_format_for,
+        content_type_for,
+        dataframe_to_bytes,
+        schema_sidecar,
+    )
+
+    canonical_format = canonical_format_for(source_version.file_format)
     ttl = download_url_ttl_seconds()
-    for ext, (builder, content_type) in artifact_builders.items():
-        filename = f"{ds.name}_v{next_version}.{ext}"
-        key = f"{artifact_root}/{filename}"
-        artifact_data = builder()
-        await get_storage().upload_file(key, artifact_data, content_type, metadata)
-        artifacts[ext] = {
-            "filename": filename,
-            "storage_key": key,
-            "download_url": await get_storage().get_download_url(key, expires_in=ttl),
+    artifacts = {}
+
+    canonical_bytes = dataframe_to_bytes(output_df, canonical_format)
+    canonical_filename = f"{ds.name}_v{next_version}.{canonical_format}"
+    canonical_key = f"{artifact_root}/{canonical_filename}"
+    await get_storage().upload_file(canonical_key, canonical_bytes, content_type_for(canonical_format), metadata)
+    artifacts[canonical_format] = {
+        "filename": canonical_filename,
+        "storage_key": canonical_key,
+        "download_url": await get_storage().get_download_url(canonical_key, expires_in=ttl),
+        "expires_in": ttl,
+        "size_bytes": len(canonical_bytes),
+    }
+    await record_event(
+        db,
+        action=DOWNLOAD_URL_ISSUED,
+        resource_type="transformation_plan",
+        resource_id=str(plan.id),
+        organization_id=org_id,
+        actor_id=getattr(current_user, "id", None),
+        details={
+            "dataset_id": str(ds.id),
+            "version_number": next_version,
+            "storage_key": canonical_key,
+            "format": canonical_format,
+            "size_bytes": len(canonical_bytes),
             "expires_in": ttl,
-            "size_bytes": len(artifact_data),
-        }
-        await record_event(
-            db,
-            action=DOWNLOAD_URL_ISSUED,
-            resource_type="transformation_plan",
-            resource_id=str(plan.id),
-            organization_id=org_id,
-            actor_id=getattr(current_user, "id", None),
-            details={
-                "dataset_id": str(ds.id),
-                "version_number": next_version,
-                "storage_key": key,
-                "format": ext,
-                "size_bytes": len(artifact_data),
-                "expires_in": ttl,
-                "surface": "transformation_result",
-            },
-            ip_address=client_ip(request),
-            user_agent=client_user_agent(request),
-            # The plan status, artifacts and version row must land together, so
-            # the audit row joins the endpoint's own transaction instead of
-            # committing a half-finished transformation.
-            commit=False,
-        )
+            "surface": "transformation_result",
+        },
+        ip_address=client_ip(request),
+        user_agent=client_user_agent(request),
+        commit=False,
+    )
+
+    side_bytes = schema_sidecar(output_df, next_version)
+    side_filename = f"{ds.name}_v{next_version}.schema.json"
+    side_key = f"{artifact_root}/{side_filename}"
+    await get_storage().upload_file(side_key, side_bytes, content_type_for("schema.json"), metadata)
+    artifacts["schema.json"] = {
+        "filename": side_filename,
+        "storage_key": side_key,
+        "download_url": await get_storage().get_download_url(side_key, expires_in=ttl),
+        "expires_in": ttl,
+        "size_bytes": len(side_bytes),
+    }
 
     # Refined outputs use modern XLSX for legacy XLS sources; xlwt is intentionally not used.
     output_format = source_version.file_format if source_version.file_format in {"csv", "json", "parquet", "xlsx"} else "xlsx"
