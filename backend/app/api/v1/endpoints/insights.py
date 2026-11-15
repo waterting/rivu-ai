@@ -16,6 +16,7 @@ from app.models.transformation import TransformationPlan
 from app.ai.factory import get_ai_provider
 from app.core.config import settings
 from app.ai.planner import generate_transformation_plan
+from app.ai.bi import ColumnFacts, analyse_business_data
 from app.core.storage import get_storage
 from app.ingestion.parser import parse_to_polars
 import polars as pl
@@ -113,6 +114,78 @@ async def jobs(dataset_id: UUID, current_user: User = Depends(get_current_user),
         "result": j.result, "queued_at": j.queued_at.isoformat() if j.queued_at else None,
         "completed_at": j.completed_at.isoformat() if j.completed_at else None,
     } for j in rows]}
+
+@router.get("/{dataset_id}/bi")
+async def business_intelligence(
+    dataset_id: UUID,
+    max_rows: int = Query(200_000, ge=1_000, le=2_000_000),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Evidence-based business metrics computed from the current dataset version.
+
+    Every metric is derived from rows in the stored file: no AI, no external data,
+    no estimates. Columns that are not present are reported as unavailable with the
+    reason, so the UI can never present a fabricated number.
+    """
+    ds, _ = await dataset_for(dataset_id, current_user, db)
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id,
+        DatasetVersion.version_number == ds.current_version,
+    ))).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    profile = (await db.execute(
+        select(DataProfile).where(DataProfile.dataset_version_id == version.id)
+    )).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(202, detail={"message": "Dataset is still being profiled."})
+
+    column_rows = (await db.execute(
+        select(ColumnProfile)
+        .where(ColumnProfile.data_profile_id == profile.id)
+        .order_by(ColumnProfile.column_index)
+    )).scalars().all()
+
+    column_facts = [
+        ColumnFacts(
+            name=c.column_name,
+            semantic_type=c.semantic_type or c.inferred_type or "unknown",
+            dtype=str(c.inferred_type or ""),
+        )
+        for c in column_rows
+    ]
+
+    try:
+        raw = await get_storage().download_file(version.storage_key)
+        frame, _ = parse_to_polars(raw, version.file_format, ds.original_filename)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": "Dataset could not be loaded for analysis.",
+                "type": "bi_error",
+                "cause": str(exc)[:300],
+            },
+        )
+
+    rows_total = frame.height
+    truncated = rows_total > max_rows
+    if truncated:
+        frame = frame.head(max_rows)
+
+    analysis = analyse_business_data(frame, column_facts)
+    analysis.update({
+        "dataset_id": str(ds.id),
+        "dataset_name": ds.name,
+        "version": version.version_number,
+        "rows_scanned": frame.height,
+        "rows_total": rows_total,
+        "truncated": truncated,
+    })
+    return analysis
+
 
 @router.post("/{dataset_id}/ai-plan")
 async def ai_plan(dataset_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_session)):
