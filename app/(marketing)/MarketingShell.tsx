@@ -140,46 +140,46 @@ export default function MarketingShell({ children }: { children: React.ReactNode
             </button>
           </div>
         </div>
-
-        <div id="mobile-drawer" className={styles.mobileDrawer} data-open={mobile}>
-          {NAV.map((group) => (
-            <div key={group.label} className={styles.mobileGroup}>
-              <button
-                className={styles.mobileGroupHead}
-                data-open={mobileGroup === group.label}
-                onClick={() => setMobileGroup((g) => (g === group.label ? null : group.label))}
-              >
-                {group.label}
-                <ChevronDown />
-              </button>
-              {mobileGroup === group.label && (
-                <div className={styles.mobileSub}>
-                  {group.columns.flat().filter((l): l is NonNullable<typeof l> => Boolean(l)).map((link) => {
-                    const Icon = link.icon;
-                    return (
-                      <Link key={link.label + link.href} href={link.href}>
-                        {Icon && <Icon />}
-                        {link.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-          {SIMPLE_NAV.map((item) => (
-            <Link key={item.href} href={item.href} className={styles.mobileDirect}>
-              {item.label}
-            </Link>
-          ))}
-          <div className={styles.mobileCtas}>
-            <Link href="/login" className={`${styles.btn} ${styles.btnGhost}`}>Sign In</Link>
-            <Link href="/contact" className={`${styles.btn} ${styles.btnPrimary}`}>
-              Book a Demo <ArrowRight />
-            </Link>
-          </div>
-        </div>
       </header>
+
+      <div id="mobile-drawer" className={styles.mobileDrawer} data-open={mobile}>
+        {NAV.map((group) => (
+          <div key={group.label} className={styles.mobileGroup}>
+            <button
+              className={styles.mobileGroupHead}
+              data-open={mobileGroup === group.label}
+              onClick={() => setMobileGroup((g) => (g === group.label ? null : group.label))}
+            >
+              {group.label}
+              <ChevronDown />
+            </button>
+            {mobileGroup === group.label && (
+              <div className={styles.mobileSub}>
+                {group.columns.flat().filter((l): l is NonNullable<typeof l> => Boolean(l)).map((link) => {
+                  const Icon = link.icon;
+                  return (
+                    <Link key={link.label + link.href} href={link.href}>
+                      {Icon && <Icon />}
+                      {link.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+        {SIMPLE_NAV.map((item) => (
+          <Link key={item.href} href={item.href} className={styles.mobileDirect}>
+            {item.label}
+          </Link>
+        ))}
+        <div className={styles.mobileCtas}>
+          <Link href="/login" className={`${styles.btn} ${styles.btnGhost}`}>Sign In</Link>
+          <Link href="/contact" className={`${styles.btn} ${styles.btnPrimary}`}>
+            Book a Demo <ArrowRight />
+          </Link>
+        </div>
+      </div>
 
       <main className={styles.main}>{children}</main>
 

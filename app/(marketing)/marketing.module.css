@@ -27,7 +27,11 @@
   flex-direction: column;
 }
 
-.shell :global(a) { color: inherit; text-decoration: none; }
+/* Note: do NOT set `color: inherit` here. A `.shell a` rule (specificity 0,1,1)
+   would override every button colour class (0,1,0), turning "Book a Demo" and
+   other primary buttons dark. The base `a { color: inherit }` reset in
+   globals.css (0,0,1) already covers plain links without breaking buttons. */
+.shell :global(a) { text-decoration: none; }
 .shell :global(button) { font: inherit; cursor: pointer; }
 
 /* ---------- layout ---------- */
@@ -280,8 +284,9 @@
    FOOTER
    ============================================================ */
 .footer {
-  background: var(--black);
-  color: #c9c5d2;
+  background: #ffffff;
+  color: var(--ink-2);
+  border-top: 1px solid var(--border);
   padding: 70px 0 34px;
   margin-top: 40px;
 }
@@ -290,13 +295,13 @@
   grid-template-columns: 1.4fr 1fr 1fr 1fr;
   gap: 40px;
   padding-bottom: 48px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--border);
 }
-.footer .brandWord { color: #fff; }
+.footer .brandWord { color: var(--ink); }
 .footerBlurb {
   font-size: 13.5px;
   line-height: 1.7;
-  color: #9a95a6;
+  color: var(--ink-2);
   max-width: 280px;
   margin: 16px 0 0;
 }
@@ -305,17 +310,17 @@
   font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #7c7788;
+  color: var(--ink-3);
   margin: 0 0 16px;
 }
 .footerCol a {
   display: block;
   font-size: 14px;
-  color: #c9c5d2;
+  color: var(--ink-2);
   padding: 6px 0;
   transition: color 0.16s;
 }
-.footerCol a:hover { color: #fff; }
+.footerCol a:hover { color: var(--violet); }
 .footerBottom {
   display: flex;
   align-items: center;
@@ -324,7 +329,7 @@
   padding-top: 26px;
   flex-wrap: wrap;
   font-size: 12.5px;
-  color: #7c7788;
+  color: var(--ink-3);
 }
 .footerBadges { display: flex; gap: 18px; flex-wrap: wrap; }
 .footerBadge {
@@ -332,10 +337,10 @@
   align-items: center;
   gap: 7px;
   padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12px;
-  color: #b8b2c4;
+  color: var(--ink-2);
 }
 .footerBadge svg { width: 14px; height: 14px; color: var(--violet); }
 
@@ -469,18 +474,25 @@
   .btn, .card, .navTrigger, .megaWrap { transition: none; }
 }
 
-/* mobile drawer */
+/* mobile drawer
+   Rendered as a sibling of <header>, not a child, so `position: fixed` is
+   relative to the viewport (the header's backdrop-filter would otherwise trap
+   a fixed child and collapse it to the header's height). */
 .mobileDrawer {
   display: none;
   position: fixed;
-  inset: 64px 0 0;
+  inset: 72px 0 0;
   background: #fff;
   z-index: 99;
   padding: 24px 20px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-top: 1px solid var(--border);
 }
 .mobileDrawer[data-open="true"] { display: block; }
+@media (max-width: 720px) {
+  .mobileDrawer { inset: 64px 0 0; }
+}
 .mobileGroup { border-bottom: 1px solid var(--border); }
 .mobileGroupHead {
   display: flex;

@@ -64,3 +64,8 @@
 @media(max-width:900px){.lab-grid{grid-template-columns:1fr 1fr}.lab-card:last-child{grid-column:1/-1}.lab-card:last-child .lab-art{height:270px}.lab-heading{grid-template-columns:1fr;gap:18px}.lab-heading>p{max-width:620px}}
 @media(max-width:600px){.solution-lab{padding-top:80px;padding-bottom:80px}.lab-grid{grid-template-columns:1fr}.lab-card:last-child{grid-column:auto}.lab-art{height:225px}.lab-card:last-child .lab-art{height:225px}.lab-card>p{min-height:0}.lab-bottom{align-items:flex-start;flex-wrap:wrap;padding:17px}.lab-bottom p{flex-basis:calc(100% - 60px)}.lab-bottom button{margin-left:54px}.lab-heading h2{font-size:46px}}
 @media(prefers-reduced-motion:reduce){.lab-product,.insight-orb{animation:none}}
+
+/* Smooth scrolling for in-page / cross-page anchor jumps. scroll-padding-top
+   keeps anchored sections clear of the sticky site header. */
+html{scroll-behavior:smooth;scroll-padding-top:88px}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
