@@ -81,13 +81,21 @@ def _named(candidates: list[ColumnFacts], hints: tuple[str, ...]) -> ColumnFacts
     return None
 
 
-def detect_column_roles(columns: list[ColumnFacts]) -> ColumnRoles:
+def detect_column_roles(
+    columns: list[ColumnFacts],
+    overrides: dict[str, str] | None = None,
+) -> tuple[ColumnRoles, dict[str, str]]:
     """Map profiled columns onto business roles using names and semantic types.
 
     Detection is deterministic and conservative: a column is only used for a role
     when its name matches a known hint (or, for dates, when the profiler found a
-    date/datetime semantic type).
+    date/datetime semantic type). A manual override always wins, because a human
+    decision about what a column means outranks a heuristic.
+
+    Returns the roles plus which roles came from an override.
     """
+    overrides = overrides or {}
+    known = {column.name for column in columns}
 
     numeric = _numeric(columns)
     dates = [c for c in columns if c.semantic_type in {"date", "datetime"}]
@@ -109,7 +117,7 @@ def detect_column_roles(columns: list[ColumnFacts]) -> ColumnRoles:
     if quantity is not None and quantity.name in {unit_price.name if unit_price else "", stock.name if stock else ""}:
         quantity = None
 
-    return ColumnRoles(
+    roles = ColumnRoles(
         date=date_col.name if date_col else None,
         quantity=quantity.name if quantity else None,
         unit_price=unit_price.name if unit_price else None,
@@ -118,6 +126,22 @@ def detect_column_roles(columns: list[ColumnFacts]) -> ColumnRoles:
         stock=stock.name if stock else None,
         product=product_col.name if product_col else None,
     )
+
+    applied: dict[str, str] = {}
+    for role in roles.as_dict():
+        override = overrides.get(role)
+        if override is None:
+            continue
+        if override in ("", "none", "other"):
+            setattr(roles, role, None)
+            applied[role] = override
+            continue
+        if override not in known:
+            continue
+        setattr(roles, role, override)
+        applied[role] = override
+
+    return roles, applied
 
 
 # --------------------------------------------------------------------------------------
@@ -168,6 +192,7 @@ def analyse_business_data(
     df: pl.DataFrame,
     columns: list[ColumnFacts],
     top_n: int = 5,
+    overrides: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Compute evidence-based business metrics for a dataset.
 
@@ -180,7 +205,8 @@ def analyse_business_data(
       * `limitations` — what could not be computed and why.
 
     The caller is responsible for supplying a frame whose dtypes match the
-    profiled column facts.
+    profiled column facts. `overrides` maps a role to a column name and always
+    wins over the heuristic detection.
     """
 
     if df.height == 0:
@@ -194,7 +220,7 @@ def analyse_business_data(
             "limitations": ["Dataset contains no rows."],
         }
 
-    roles = detect_column_roles(columns)
+    roles, applied_overrides = detect_column_roles(columns, overrides)
     row_count = df.height
     metrics: list[dict[str, Any]] = []
 
@@ -392,6 +418,11 @@ def analyse_business_data(
     return {
         "row_count": row_count,
         "roles": roles.as_dict(),
+        "roles_source": {
+            role: ("override" if role in applied_overrides else "auto")
+            for role in roles.as_dict()
+        },
+        "overrides_applied": applied_overrides,
         "metrics": metrics,
         "top_products": top_products,
         "demand_trend": demand_trend,

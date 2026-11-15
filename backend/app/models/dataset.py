@@ -40,6 +40,7 @@ class DataSource(Base):
         default="uploading",
     )
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    column_role_overrides: Mapped[dict | None] = mapped_column(JSONB)
     tags: Mapped[list] = mapped_column(ARRAY(String), default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -35,7 +35,8 @@ def _facts() -> list[ColumnFacts]:
 
 
 def test_detect_column_roles_maps_expected_columns():
-    roles = detect_column_roles(_facts())
+    roles, applied = detect_column_roles(_facts())
+    assert applied == {}
 
     assert roles.date == "order_date"
     assert roles.quantity == "qty"

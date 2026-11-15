@@ -10,7 +10,14 @@ async def dummy_session():
     mock_session = AsyncMock()
     yield mock_session
 
-app.dependency_overrides[get_session] = dummy_session
+@pytest.fixture(autouse=True)
+def mock_session_override():
+    """Scope the stub session to this module so other API tests keep the real one."""
+    app.dependency_overrides[get_session] = dummy_session
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_session, None)
 
 
 @pytest.mark.asyncio

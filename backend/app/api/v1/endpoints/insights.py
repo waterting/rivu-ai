@@ -235,6 +235,121 @@ async def jobs(dataset_id: UUID, current_user: User = Depends(get_current_user),
         "completed_at": j.completed_at.isoformat() if j.completed_at else None,
     } for j in rows]}
 
+@router.get("/{dataset_id}/column-roles")
+async def get_column_roles(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Show what each column means to the business and why.
+
+    Roles come from deterministic detection over the stored profile. Any role the
+    user has overridden is flagged, so the UI can show which mapping is a human
+    decision rather than a guess.
+    """
+    ds, _ = await dataset_for(dataset_id, current_user, db)
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id,
+        DatasetVersion.version_number == ds.current_version,
+    ))).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    profile = (await db.execute(
+        select(DataProfile).where(DataProfile.dataset_version_id == version.id)
+    )).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(202, detail={"message": "Dataset is still being profiled."})
+
+    column_rows = (await db.execute(
+        select(ColumnProfile)
+        .where(ColumnProfile.data_profile_id == profile.id)
+        .order_by(ColumnProfile.column_index)
+    )).scalars().all()
+
+    from app.profiler.roles import ROLE_ALIASES, resolve_roles, role_summary
+
+    records = [
+        {
+            "column_name": column.column_name,
+            "semantic_type": column.semantic_type or column.inferred_type or "string",
+            "sample_values": column.sample_values or [],
+        }
+        for column in column_rows
+    ]
+    resolved = resolve_roles(records, overrides=ds.column_role_overrides or {})
+
+    return {
+        "dataset_id": str(ds.id),
+        "version": version.version_number,
+        "columns": resolved,
+        "summary": role_summary(resolved),
+        "available_roles": sorted(ROLE_ALIASES.keys()),
+        "overrides": ds.column_role_overrides or {},
+    }
+
+
+@router.put("/{dataset_id}/column-roles")
+async def update_column_roles(
+    dataset_id: UUID,
+    payload: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Correct a column's business role without re-uploading the dataset.
+
+    Unknown columns and unknown roles are rejected instead of silently ignored, so
+    a typo cannot quietly break every metric that depends on the mapping.
+    """
+    ds, _ = await dataset_for(dataset_id, current_user, db)
+    await require_org_role(current_user, db, {"owner", "admin", "editor"})
+
+    from app.profiler.roles import ROLE_ALIASES
+
+    overrides = (payload or {}).get("overrides") or {}
+    if not isinstance(overrides, dict):
+        raise HTTPException(400, "overrides must be an object of role -> column name")
+
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id,
+        DatasetVersion.version_number == ds.current_version,
+    ))).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    profile = (await db.execute(
+        select(DataProfile).where(DataProfile.dataset_version_id == version.id)
+    )).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(202, detail={"message": "Dataset is still being profiled."})
+
+    known_columns = {
+        row[0]
+        for row in (await db.execute(
+            select(ColumnProfile.column_name).where(ColumnProfile.data_profile_id == profile.id)
+        )).all()
+    }
+    valid_roles = set(ROLE_ALIASES.keys())
+
+    for role, column in overrides.items():
+        if role not in valid_roles:
+            raise HTTPException(400, f"Unknown role '{role}'. Valid roles: {sorted(valid_roles)}")
+        if column in (None, "", "none", "other"):
+            continue
+        if column not in known_columns:
+            raise HTTPException(400, f"Column '{column}' does not exist in this dataset")
+
+    ds.column_role_overrides = overrides
+    await db.commit()
+
+    return {
+        "dataset_id": str(ds.id),
+        "version": version.version_number,
+        "overrides": overrides,
+        "message": "Column roles updated. Business metrics will use this mapping immediately.",
+    }
+
+
 @router.get("/{dataset_id}/bi")
 async def business_intelligence(
     dataset_id: UUID,
@@ -295,7 +410,11 @@ async def business_intelligence(
     if truncated:
         frame = frame.head(max_rows)
 
-    analysis = analyse_business_data(frame, column_facts)
+    analysis = analyse_business_data(
+        frame,
+        column_facts,
+        overrides=ds.column_role_overrides or {},
+    )
     analysis.update({
         "dataset_id": str(ds.id),
         "dataset_name": ds.name,

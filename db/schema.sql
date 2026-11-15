@@ -157,6 +157,7 @@ CREATE TABLE data_sources (
   file_format     VARCHAR(20) NOT NULL,  -- csv, xlsx, json
   status          VARCHAR(50) NOT NULL DEFAULT 'uploading',
   current_version INTEGER NOT NULL DEFAULT 1,
+  column_role_overrides JSONB,
   tags            TEXT[] DEFAULT '{}',
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()

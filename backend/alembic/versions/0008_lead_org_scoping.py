@@ -15,12 +15,21 @@ depends_on = None
 
 
 def _has_column(bind, table: str, column: str) -> bool:
-    return column in {c["name"] for c in sa.inspect(bind).get_columns(table)}
+    try:
+        return column in {c["name"] for c in sa.inspect(bind).get_columns(table)}
+    except Exception:
+        # Offline (--sql) mode has no live connection to inspect; assume the
+        # column is absent so the DDL is still emitted for review.
+        return False
 
 
 def upgrade() -> None:
     bind = op.get_bind()
-    if not sa.inspect(bind).has_table("leads"):
+    try:
+        has_leads = sa.inspect(bind).has_table("leads")
+    except Exception:
+        has_leads = True
+    if not has_leads:
         return
     if _has_column(bind, "leads", "organization_id"):
         return
@@ -44,7 +53,11 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
-    if not sa.inspect(bind).has_table("leads"):
+    try:
+        has_leads = sa.inspect(bind).has_table("leads")
+    except Exception:
+        has_leads = True
+    if not has_leads:
         return
     if not _has_column(bind, "leads", "organization_id"):
         return
