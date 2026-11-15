@@ -3,13 +3,14 @@
 // that escapes the viewport. Writes a compact JSON report plus screenshots.
 //
 // Usage: node scripts/ui-audit.mjs [route ...]
+// Credentials: E2E_EMAIL and E2E_PASSWORD (never hardcoded).
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
+import { credentialsOrExit } from "./lib/credentials.mjs";
 
 const BASE = process.env.UI_AUDIT_BASE || "http://127.0.0.1:3010";
-const EMAIL = process.env.E2E_EMAIL || "rivu-smoke-1107@example.com";
-const PASSWORD = process.env.E2E_PASSWORD || "SmokeTest123";
+const { email: EMAIL, password: PASSWORD } = credentialsOrExit();
 const OUT = path.resolve(".audit/ui");
 fs.mkdirSync(OUT, { recursive: true });
 

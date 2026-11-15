@@ -1,4 +1,4 @@
-// UI/UX audit capture: logs in through the real UI against the dev proxy and
+﻿// UI/UX audit capture: logs in through the real UI against the dev proxy and
 // screenshots every authenticated surface at desktop, tablet and mobile widths.
 //
 // Usage: node scripts/audit-capture.mjs [--pages-only]
@@ -10,8 +10,9 @@ const BASE = process.env.E2E_BASE_URL || "http://127.0.0.1:3010";
 const OUT = path.resolve(".audit");
 const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
 
-const email = process.env.E2E_EMAIL || "rivu-smoke-1107@example.com";
-const password = process.env.E2E_PASSWORD || "SmokeTest123";
+import { credentialsOrExit } from "./lib/credentials.mjs";
+
+const { email, password } = credentialsOrExit();
 
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },

@@ -1,4 +1,4 @@
-// Auth page verification: layout fit, scroll behaviour, overlap, tap targets and
+﻿// Auth page verification: layout fit, scroll behaviour, overlap, tap targets and
 // the real login journey at several viewports.
 //
 // Usage: node scripts/auth-verify.mjs
@@ -10,8 +10,9 @@ const BASE = process.env.E2E_BASE_URL || "http://127.0.0.1:3010";
 const OUT = path.resolve(".audit");
 fs.mkdirSync(OUT, { recursive: true });
 
-const email = process.env.E2E_EMAIL || "rivu-smoke-1107@example.com";
-const password = process.env.E2E_PASSWORD || "SmokeTest123";
+import { credentialsOrExit } from "./lib/credentials.mjs";
+
+const { email, password } = credentialsOrExit();
 
 const VIEWPORTS = [
   { name: "desktop-1440", width: 1440, height: 900 },

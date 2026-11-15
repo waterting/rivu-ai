@@ -1,6 +1,8 @@
 import { chromium } from "@playwright/test";
+import { credentialsOrExit } from "./lib/credentials.mjs";
 
-const BASE = "http://127.0.0.1:3000";
+const BASE = process.env.E2E_BASE_URL || "http://127.0.0.1:3000";
+const { email, password } = credentialsOrExit();
 const browser = await chromium.launch();
 const page = await browser.newPage();
 page.on("pageerror", (e) => console.log("[pageerror]", e.message));
@@ -22,8 +24,8 @@ const hydrated = await page.evaluate(() => {
 });
 console.log("hydration:", hydrated);
 
-await page.getByLabel("Email", { exact: true }).fill("rivu-smoke-1107@example.com");
-await page.getByLabel("Password", { exact: true }).fill("SmokeTest123");
+await page.getByLabel("Email", { exact: true }).fill(email);
+await page.getByLabel("Password", { exact: true }).fill(password);
 await page.getByRole("button", { name: /Enter Rivu/i }).click();
 await page.waitForTimeout(6000);
 console.log("url:", page.url());

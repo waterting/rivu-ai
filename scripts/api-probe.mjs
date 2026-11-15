@@ -1,12 +1,12 @@
 // Read-only API probe: logs in and dumps compact summaries of the endpoints the
 // dashboard relies on, so UI work can be checked against real payloads.
 //
-// Usage: node scripts/api-probe.mjs [email] [password]
+// Credentials come from the environment (E2E_EMAIL / E2E_PASSWORD); nothing is
+// hardcoded. Overrides: E2E_API_URL, E2E_EMAIL.
 import fs from "node:fs";
+import { withCredentials } from "./lib/credentials.mjs";
 
 const BASE = process.env.PROBE_API || "http://127.0.0.1:8000/api/v1";
-const email = process.argv[2] || "rivu-smoke-1107@example.com";
-const password = process.argv[3] || "SmokeTest123";
 
 async function json(path, token, init = {}) {
   const res = await fetch(BASE + path, {
@@ -27,6 +27,7 @@ async function json(path, token, init = {}) {
   return { status: res.status, body };
 }
 
+await withCredentials(async ({ email, password }) => {
 const login = await json("/auth/login", null, { method: "POST", body: JSON.stringify({ email, password }) });
 if (login.status !== 200) {
   console.log("LOGIN FAILED", login.status, JSON.stringify(login.body).slice(0, 200));
@@ -86,3 +87,4 @@ for (const entry of out) {
   (entry.summary ?? []).slice(0, 14).forEach((line) => console.log("   " + line));
   if (entry.note) console.log("   ! " + entry.note + " " + (entry.body ?? ""));
 }
+});
