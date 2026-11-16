@@ -5,7 +5,10 @@ Run as a separate Render background worker:
 PostgreSQL row locks ensure only one worker claims a queued job at a time.
 """
 import asyncio
+import os
+import socket
 import time
+import uuid as uuid_module
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -16,11 +19,13 @@ from app.core import database
 from app.core.database import close_db, init_db
 from app.models.dataset import DataSource
 from app.models.quality import Job
+from app.models.worker import WorkerHeartbeat
 from app.observability.metrics import (
     job_duration_seconds,
     job_failures_total,
     jobs_pending,
     jobs_total,
+    worker_last_seen_timestamp_seconds,
 )
 from app.workers.processor import process_dataset_async
 
@@ -28,9 +33,41 @@ logger = structlog.get_logger(__name__)
 POLL_SECONDS = 2
 STALE_JOB_MINUTES = 120
 
+# Identifies this process in worker_heartbeats. Generated once per process so a
+# restart shows up as a new row instead of silently refreshing an old one.
+WORKER_ID = os.environ.get("RIVU_WORKER_ID") or f"{socket.gethostname()}-{uuid_module.uuid4().hex[:12]}"
+WORKER_HOSTNAME = socket.gethostname()
+CLAIMS = {"count": 0}
+
 # Mirrors the job_type enum; reported so a drained queue reads 0 instead of
 # keeping the last observed depth.
 JOB_TYPES = ("profile", "quality_analysis", "ai_analysis", "transformation", "validation", "export")
+
+
+async def _write_heartbeat(db) -> None:
+    """Record that this worker is alive and consuming the queue.
+
+    Without this the API cannot tell "queued, worker on it" from "queued, nobody
+    is listening", so a missing worker looks identical to a slow one.
+    """
+    now = datetime.now(timezone.utc)
+    row = (
+        await db.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.worker_id == WORKER_ID))
+    ).scalar_one_or_none()
+    if row is None:
+        row = WorkerHeartbeat(
+            worker_id=WORKER_ID,
+            hostname=WORKER_HOSTNAME,
+            last_seen_at=now,
+            jobs_claimed=CLAIMS["count"],
+        )
+        db.add(row)
+    else:
+        row.hostname = WORKER_HOSTNAME
+        row.last_seen_at = now
+        row.jobs_claimed = CLAIMS["count"]
+    worker_last_seen_timestamp_seconds.set(now.timestamp())
+    await db.commit()
 
 
 async def _refresh_queue_depth(db) -> None:
@@ -64,6 +101,12 @@ async def _recover_stale_jobs(db) -> None:
             job.status = "failed"
             job.error_message = "Worker interrupted repeatedly; maximum attempts exceeded"
             job.completed_at = now
+            if job.data_source_id:
+                dataset = (
+                    await db.execute(select(DataSource).where(DataSource.id == job.data_source_id))
+                ).scalar_one_or_none()
+                if dataset is not None:
+                    dataset.status = "failed"
             logger.error("job_failed_after_repeated_worker_interruptions", job_id=str(job.id))
     await db.commit()
 
@@ -88,6 +131,7 @@ async def _claim_one_job():
         job.progress_message = "Worker claimed job"
         await db.commit()
         jobs_total.inc(job_type=job.job_type, status="processing")
+        CLAIMS["count"] += 1
         return {
             "job_id": str(job.id),
             "job_type": job.job_type,
@@ -134,12 +178,23 @@ async def _process_claim(claim: dict) -> None:
 
 
 async def run_worker() -> None:
-    await init_db()
-    logger.info("rivu_worker_started", poll_seconds=POLL_SECONDS)
     try:
+        # Startup is retried like the poll loop. The API service runs Alembic
+        # during deployment, so a worker that boots first would otherwise die on
+        # a missing schema or a database that is still coming up, and a crashed
+        # worker consumes no jobs.
+        while True:
+            try:
+                await init_db()
+                break
+            except Exception as exc:
+                logger.warning("worker_db_init_failed", error=str(exc), retry_seconds=5)
+                await asyncio.sleep(5)
+        logger.info("rivu_worker_started", poll_seconds=POLL_SECONDS, worker_id=WORKER_ID)
         while True:
             try:
                 async with database._session_factory() as db:
+                    await _write_heartbeat(db)
                     await _recover_stale_jobs(db)
                     await _refresh_queue_depth(db)
                 claim = await _claim_one_job()
@@ -167,6 +222,14 @@ async def run_worker() -> None:
                         job.completed_at = datetime.now(timezone.utc) if job.status == "failed" else None
                         if job.status == "failed":
                             job_failures_total.inc(job_type=job.job_type)
+                            if job.data_source_id:
+                                dataset = (
+                                    await db.execute(
+                                        select(DataSource).where(DataSource.id == job.data_source_id)
+                                    )
+                                ).scalar_one_or_none()
+                                if dataset is not None:
+                                    dataset.status = "failed"
                         jobs_total.inc(job_type=job.job_type, status=job.status)
                         await db.commit()
             else:

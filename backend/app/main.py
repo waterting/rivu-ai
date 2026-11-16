@@ -113,11 +113,34 @@ app.include_router(api_router, prefix="/api/v1")
 
 @app.get("/health", tags=["health"])
 async def health_check():
+    """Liveness probe.
+
+    Reports whether a processing worker has been seen recently. The API staying
+    healthy says nothing about whether anything is consuming the job queue, and
+    that distinction is what determines whether uploads complete.
+    """
+    worker_online = None
+    worker_age_seconds = None
+    try:
+        from app.core.database import _session_factory
+        from app.services.processing_status import worker_liveness
+
+        async with _session_factory() as db:
+            liveness = await worker_liveness(db)
+        worker_online = liveness.online
+        worker_age_seconds = liveness.age_seconds
+    except Exception as exc:  # pragma: no cover - health must never fail on this
+        logger.warning("health_worker_check_failed", error=str(exc))
+
     return {
         "status": "healthy",
         "service": "rivu-api",
         "version": settings.APP_VERSION,
         "environment": settings.APP_ENV,
+        "worker": {
+            "online": worker_online,
+            "last_seen_seconds_ago": worker_age_seconds,
+        },
     }
 
 

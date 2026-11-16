@@ -45,6 +45,43 @@ async def persist_detected_presentation(db, version_uuid, parse_meta: dict) -> b
     return True
 
 
+async def _clear_previous_artifacts(db, version_uuid) -> None:
+    """Drop any profile/quality rows already written for this version.
+
+    A job that was interrupted between two commits (profile written, quality not)
+    is requeued by stale-job recovery and runs again from the top. Without this,
+    the retry inserts a second DataProfile, a second QualityReport and duplicate
+    ColumnProfiles and QualityIssues for the same version, so the dataset ends up
+    with contradictory rows and no single source of truth.
+
+    Children are removed before their parents because of the foreign keys.
+    """
+    from sqlalchemy import delete, select
+
+    from app.models.profile import ColumnProfile, DataProfile
+    from app.models.quality import QualityIssue, QualityReport
+
+    existing_profiles = (
+        await db.execute(select(DataProfile.id).where(DataProfile.dataset_version_id == version_uuid))
+    ).scalars().all()
+    if existing_profiles:
+        await db.execute(
+            delete(ColumnProfile).where(ColumnProfile.data_profile_id.in_(existing_profiles))
+        )
+        await db.execute(delete(DataProfile).where(DataProfile.id.in_(existing_profiles)))
+
+    existing_reports = (
+        await db.execute(select(QualityReport.id).where(QualityReport.dataset_version_id == version_uuid))
+    ).scalars().all()
+    if existing_reports:
+        await db.execute(
+            delete(QualityIssue).where(QualityIssue.quality_report_id.in_(existing_reports))
+        )
+        await db.execute(delete(QualityReport).where(QualityReport.id.in_(existing_reports)))
+
+    await db.flush()
+
+
 async def process_dataset_async(
     job_id: str,
     version_id: str,
@@ -77,6 +114,12 @@ async def process_dataset_async(
             job.started_at = datetime.now(timezone.utc)
             job.progress_pct = 5
             job.progress_message = "Parsing file..."
+            # The dataset reflects the job, so it cannot stay "uploaded" while a
+            # worker is mid-flight or after the job has failed.
+            ds_result = await db.execute(select(DataSource).where(DataSource.id == source_uuid))
+            dataset = ds_result.scalar_one_or_none()
+            if dataset is not None:
+                dataset.status = "processing"
             await db.commit()
 
             # ── Parse file ────────────────────────────
@@ -110,6 +153,10 @@ async def process_dataset_async(
             except Exception as e:
                 await _fail_job(db, job, f"Profiling failed: {e}")
                 return
+
+            # Any rows from a previous attempt on this version are replaced, so a
+            # retried job cannot leave duplicate profiles behind.
+            await _clear_previous_artifacts(db, version_uuid)
 
             # Persist DataProfile
             profile = DataProfile(
@@ -320,5 +367,17 @@ async def _fail_job(db, job, error_message: str):
         job.duration_ms = int(
             (job.completed_at - job.started_at).total_seconds() * 1000
         )
+    # Keep the dataset in step with the job. Previously the dataset stayed on
+    # "uploaded" forever, so the API and the UI had no failure to report.
+    if job.data_source_id:
+        from sqlalchemy import select
+
+        from app.models.dataset import DataSource
+
+        dataset = (
+            await db.execute(select(DataSource).where(DataSource.id == job.data_source_id))
+        ).scalar_one_or_none()
+        if dataset is not None:
+            dataset.status = "failed"
     await db.commit()
     logger.error("job_failed", job_id=str(job.id), error=error_message)

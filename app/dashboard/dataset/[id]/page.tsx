@@ -6,7 +6,7 @@ import styles from "./dataset.module.css";
 import { authFetch, requestBlob } from "../../../../lib/api";
 import BrandLogo from "../../../../lib/BrandLogo";
 import CursorField from "../../../../lib/CursorField";
-import ProcessingRail from "../../../../lib/ProcessingRail";
+import ProcessingStatusPanel from "../../../../lib/ProcessingStatusPanel";
 const authHeaders=()=>({Authorization:"Bearer "+(typeof window!=="undefined"?localStorage.getItem("rivu_access_token")||"":"")});
 
 type ColumnProfile={name:string;semantic_type:string;null_pct:number|string;uniqueness_pct:number|string};
@@ -40,39 +40,39 @@ function apiErrorMessage(data: unknown, fallback: string): string {
 export default function DatasetPage({params}:{params:Promise<{id:string}>}){
  const router=useRouter();
  const datasetId = use(params).id;
- const [profile,setProfile]=useState<DatasetProfile|null>(null),[quality,setQuality]=useState<QualityReport|null>(null),[plan,setPlan]=useState<RefineryPlan|null>(null),[busy,setBusy]=useState(false),[preview,setPreview]=useState<PreviewResponse|null>(null),[running,setRunning]=useState(false),[error,setError]=useState(""),[artifacts,setArtifacts]=useState<ArtifactMap|null>(null),[reportData,setReportData]=useState<IntelligenceReport|null>(null),[table,setTable]=useState<TableResponse|null>(null),[tableSearch,setTableSearch]=useState(""),[tablePage,setTablePage]=useState(0),[sortColumn,setSortColumn]=useState(""),[sortDesc,setSortDesc]=useState(false),[tableLoading,setTableLoading]=useState(false);
- const loadReport = useCallback(async () => { if(!datasetId)return; try { const r=await authFetch("/reports/"+datasetId+"/dashboard",{headers:authHeaders()}); const d=await r.json(); if(r.ok){setReportData(d); if(d.artifacts)setArtifacts(d.artifacts)} } catch {} }, [datasetId]);
-  const load = useCallback(async () => {
-  if (!datasetId) return false;
-  try{
-    const [p,q]=await Promise.all([
-      authFetch("/datasets/"+datasetId+"/profile",{headers:authHeaders()}),
-      authFetch("/datasets/"+datasetId+"/quality",{headers:authHeaders()})
-    ]);
-    if(p.status===401||q.status===401){router.push("/login");return false}
-    if(p.status===202||q.status===202){
-      setError("Rivu is still processing this dataset. Live processing status will update automatically.");
-      return false;
-    }
-    if(!p.ok){const d=await p.json().catch(()=>null);throw new Error(apiErrorMessage(d,"Profile unavailable"))}
-    const pd=await p.json();
-    setProfile(pd);
-    if(q.ok){setQuality(await q.json());await loadReport();}
-    else throw new Error(await q.text().catch(()=> "Quality analysis unavailable")); 
-    return true;
-  }catch(e){setError(e instanceof Error?e.message:"Unable to load dataset intelligence.");return false}
- }, [datasetId, router, loadReport]);
+  const [profile,setProfile]=useState<DatasetProfile|null>(null),[quality,setQuality]=useState<QualityReport|null>(null),[plan,setPlan]=useState<RefineryPlan|null>(null),[busy,setBusy]=useState(false),[preview,setPreview]=useState<PreviewResponse|null>(null),[running,setRunning]=useState(false),[error,setError]=useState(""),[artifacts,setArtifacts]=useState<ArtifactMap|null>(null),[reportData,setReportData]=useState<IntelligenceReport|null>(null),[table,setTable]=useState<TableResponse|null>(null),[tableSearch,setTableSearch]=useState(""),[tablePage,setTablePage]=useState(0),[sortColumn,setSortColumn]=useState(""),[sortDesc,setSortDesc]=useState(false),[tableLoading,setTableLoading]=useState(false),[terminalError,setTerminalError]=useState("");
+  const loadReport = useCallback(async () => { if(!datasetId)return; try { const r=await authFetch("/reports/"+datasetId+"/dashboard",{headers:authHeaders()}); const d=await r.json(); if(r.ok){setReportData(d); if(d.artifacts)setArtifacts(d.artifacts)} } catch {} }, [datasetId]);
+   const load = useCallback(async () => {
+   if (!datasetId) return false;
+   try{
+     const [p,q]=await Promise.all([
+       authFetch("/datasets/"+datasetId+"/profile",{headers:authHeaders()}),
+       authFetch("/datasets/"+datasetId+"/quality",{headers:authHeaders()})
+     ]);
+     if(p.status===401||q.status===401){router.push("/login");return false}
+     if(p.status===202||q.status===202)return false;
+     if(!p.ok){const d=await p.json().catch(()=>null);throw new Error(apiErrorMessage(d,"Profile unavailable"))}
+     const pd=await p.json();
+     setProfile(pd);
+     if(q.ok){setQuality(await q.json());await loadReport();}
+     else throw new Error(await q.text().catch(()=> "Quality analysis unavailable")); 
+     return true;
+   }catch(e){setTerminalError(e instanceof Error?e.message:"Unable to load dataset intelligence.");return false}
+  }, [datasetId, router, loadReport]);
+  // The job row is the source of truth for whether processing is still running.
+  // The previous code polled profile/quality and treated any missing artifact as
+  // "still working", so a failed job, or a queue with no worker, never stopped
+  // spinning.
+  const handleProcessingReady = useCallback(async () => {
+   setTerminalError("");
+   const ok = await load();
+   if(!ok)setTerminalError("Processing reported complete, but the dataset profile could not be read. Please refresh.");
+  }, [load]);
+  const handleProcessingFailure = useCallback((message: string) => {
+   setTerminalError(message);
+  }, []);
  const loadTable=useCallback(async()=>{if(!datasetId)return;setTableLoading(true);try{const qs=new URLSearchParams({offset:String(tablePage*50),limit:"50",search:tableSearch,sort:sortColumn,desc:String(sortDesc)});const r=await authFetch("/datasets/"+datasetId+"/preview?"+qs.toString(),{headers:authHeaders()});const d=await r.json().catch(()=>({}));if(r.ok)setTable(d);else setError(apiErrorMessage(d,"Dataset preview unavailable"));}catch(e){setError(e instanceof Error?e.message:"Dataset preview unavailable")}finally{setTableLoading(false)}},[datasetId,tablePage,tableSearch,sortColumn,sortDesc]);
- useEffect(()=>{if(!profile)return;const timer=window.setTimeout(()=>{void loadTable()},0);return()=>window.clearTimeout(timer)},[profile,loadTable]);
- useEffect(()=>{
-  let cancelled=false;
-  const poll=async()=>{
-    const ready=await load();
-    if(!ready&&!cancelled)setTimeout(poll,1800);
-  };
-  poll();
-  return()=>{cancelled=true};
-},[load]);
+  useEffect(()=>{if(!profile)return;const timer=window.setTimeout(()=>{void loadTable()},0);return()=>window.clearTimeout(timer)},[profile,loadTable]);
  // Refinement is deliberately user-approved. Rivu never mutates a dataset merely because it was uploaded.
 
  async function ai() {
@@ -166,13 +166,23 @@ export default function DatasetPage({params}:{params:Promise<{id:string}>}){
   <div>
 
    {!profile ? (
-    <div className={styles.loading}>
-     <Loader2 className={styles.spin}/>
-     <h2>Refining your dataset...</h2>
-     <p>Rivu is profiling structure, quality and consistency.</p>
-     {error&&<div className={styles.error}>{error}</div>}<ProcessingRail active={busy||running} label={running?"Applying approved refinement":"Analyzing dataset"}/>
-     <button onClick={load}>Refresh</button>
-    </div>
+    terminalError ? (
+     <div className={styles.loading} role="alert">
+      <h2>Dataset processing failed</h2>
+      <p>{terminalError}</p>
+      {error&&<div className={styles.error}>{error}</div>}
+      <div className="loadingActions">
+       <button onClick={()=>router.push("/dashboard")}>Back to workspace</button>
+       <button onClick={()=>window.location.reload()}>Check again</button>
+      </div>
+     </div>
+    ) : (
+     <ProcessingStatusPanel
+       datasetId={datasetId}
+       onReady={handleProcessingReady}
+       onFailure={handleProcessingFailure}
+     />
+    )
    ) : (
     <>
      <div className={styles.heroTop}>

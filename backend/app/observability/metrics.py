@@ -219,6 +219,10 @@ job_failures_total = registry.counter(
     "Jobs that exhausted their retry budget, by job type.",
     ("job_type",),
 )
+worker_last_seen_timestamp_seconds = registry.gauge(
+    "rivu_worker_last_seen_timestamp_seconds",
+    "Unix time of the most recent worker heartbeat; absent when no worker runs.",
+)
 
 ai_requests_total = registry.counter(
     "rivu_ai_requests_total",

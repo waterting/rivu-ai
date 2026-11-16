@@ -111,6 +111,11 @@ class Settings(BaseSettings):
     # validation for presigned downloads).
     DOWNLOAD_URL_TTL_SECONDS: int = 900
 
+    # How old a worker heartbeat may be before the API reports the queue as
+    # unattended. A worker beats every couple of seconds, so anything past this
+    # window means no worker is consuming jobs and queued work will not move.
+    WORKER_HEARTBEAT_STALE_SECONDS: int = 45
+
     # Process uploaded datasets in the API process (FastAPI BackgroundTasks) when
     # no separate database-backed worker is running.
     #

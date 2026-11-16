@@ -11,6 +11,7 @@ from app.models.billing import SubscriptionPlan, Subscription, UsageEvent, Invoi
 from app.models.commerce import Supplier, SupplierMappingRecipe, Product, ProductVariant, ChannelConnection, ChannelProductListing
 from app.models.custom_solutions import CustomSolutionProject, ProjectMilestone, Lead
 from app.models.audit import AuditLog
+from app.models.worker import WorkerHeartbeat
 
 __all__ = [
     "User",
@@ -42,4 +43,5 @@ __all__ = [
     "ProjectMilestone",
     "Lead",
     "AuditLog",
+    "WorkerHeartbeat",
 ]

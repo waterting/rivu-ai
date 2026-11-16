@@ -1,6 +1,6 @@
 """Dataset intelligence endpoints: profile, quality, jobs and AI plans."""
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -216,6 +216,110 @@ async def update_issue_status(
         },
         "active_count": len(active),
     }
+
+
+@router.get("/{dataset_id}/processing-status")
+async def processing_status_endpoint(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Live state of the job that produces this dataset's profile and quality.
+
+    Unlike /profile and /quality, which answer 202 whenever their artifact is
+    missing, this reports the job itself: which stage it reached, whether a
+    worker is actually consuming the queue, and whether the job has failed. That
+    is what lets the UI reach a terminal state instead of polling forever.
+    """
+    ds, _ = await dataset_for(dataset_id, current_user, db)
+    version = (
+        await db.execute(
+            select(DatasetVersion).where(
+                DatasetVersion.data_source_id == ds.id,
+                DatasetVersion.version_number == ds.current_version,
+            )
+        )
+    ).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    from app.services.processing_status import processing_status as build_status
+
+    return await build_status(db, ds.id, version.id)
+
+
+@router.post("/{dataset_id}/retry-processing")
+async def retry_processing(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+    background_tasks: BackgroundTasks = None,
+):
+    """Re-queue a failed processing job, within the retry budget.
+
+    Retries are bounded by ``job.max_attempts`` so a job that keeps failing ends
+    up terminal instead of looping forever. The queue architecture is unchanged:
+    this puts the job back to ``queued`` and lets the durable worker claim it.
+    """
+    ds, org = await dataset_for(dataset_id, current_user, db)
+    version = (
+        await db.execute(
+            select(DatasetVersion).where(
+                DatasetVersion.data_source_id == ds.id,
+                DatasetVersion.version_number == ds.current_version,
+            )
+        )
+    ).scalar_one_or_none()
+    if not version:
+        raise HTTPException(404, "Dataset version not found")
+
+    job = (
+        await db.execute(
+            select(Job)
+            .where(Job.dataset_version_id == version.id)
+            .order_by(Job.queued_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if job is None:
+        raise HTTPException(409, "This dataset has no processing job to retry; upload it again.")
+
+    if job.status in {"queued", "processing"}:
+        raise HTTPException(409, "This dataset is already being processed.")
+    if job.status == "completed":
+        raise HTTPException(409, "This dataset has already been processed.")
+
+    attempts = job.attempts or 0
+    max_attempts = job.max_attempts or 1
+    if attempts >= max_attempts:
+        raise HTTPException(
+            429,
+            f"This job failed {attempts} times and has no attempts left. Upload the file again to start a new job.",
+        )
+
+    job.status = "queued"
+    job.started_at = None
+    job.completed_at = None
+    job.error_message = None
+    job.progress_pct = 0
+    job.progress_message = "Retry requested; waiting for a worker"
+    ds.status = "uploaded"
+    await db.commit()
+
+    if settings.inline_processing_enabled and background_tasks is not None:
+        from app.api.v1.endpoints.datasets import _run_inline_job
+
+        background_tasks.add_task(
+            _run_inline_job,
+            str(job.id),
+            str(version.id),
+            str(ds.id),
+            str(org),
+            ds.file_format,
+        )
+
+    logger.info("job_retry_requested", job_id=str(job.id), dataset_id=str(dataset_id), attempt=attempts + 1)
+    return {"job_id": str(job.id), "status": job.status, "attempt": attempts + 1, "max_attempts": max_attempts}
 
 
 @router.get("/{dataset_id}/jobs")
