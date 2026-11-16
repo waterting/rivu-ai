@@ -67,6 +67,7 @@ const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { href: "/dashboard/services", label: "Services", icon: Briefcase },
       { href: "/dashboard/billing", label: "Billing", icon: CreditCard },
+      { href: "/dashboard/admin", label: "Admin", icon: ShieldCheck },
       { href: "/dashboard/settings", label: "Settings", icon: Settings },
     ],
   },
