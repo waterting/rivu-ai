@@ -311,7 +311,7 @@ export default function ChannelsPage() {
 
                 <div>
                   <label style={{ fontSize: 10, color: "var(--muted)" }}>
-                    Admin API Access Token (required â€” real Shopify custom-app token)
+                    Admin API Access Token (required — real Shopify custom-app token)
                   </label>
                   <input
                     type="password"

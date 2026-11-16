@@ -19,7 +19,7 @@ function makeRng(seed: number) {
   };
 }
 
-/** Flowing particle stream â€” represents raw data moving through the refinery. */
+/** Flowing particle stream — represents raw data moving through the refinery. */
 export function DataStreamScene() {
   const points = useRef<THREE.Points>(null);
   const count = 900;
@@ -74,7 +74,7 @@ export function DataStreamScene() {
   );
 }
 
-/** A deforming wireframe torus-knot â€” "quality mesh" / engine core. */
+/** A deforming wireframe torus-knot — "quality mesh" / engine core. */
 export function QualityMeshScene() {
   const mesh = useRef<THREE.Mesh>(null);
   useFrame((state, dt) => {
@@ -108,7 +108,7 @@ export function QualityMeshScene() {
 }
 
 /**
- * A globe of connected nodes â€” represents integrations / ecosystem.
+ * A globe of connected nodes — represents integrations / ecosystem.
  *
  * The nodes render as one InstancedMesh with per-instance colour instead of 140
  * separate meshes. Visually identical, but one draw call instead of 140, which

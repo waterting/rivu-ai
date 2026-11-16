@@ -172,7 +172,7 @@ export default function ServicesPage() {
       <PageHeader
         eyebrow="Services"
         title="Services"
-        sub="Need help connecting systems, cleaning a stubborn catalogue or building something custom? Ask here â€” or follow a project we are already delivering."
+        sub="Need help connecting systems, cleaning a stubborn catalogue or building something custom? Ask here — or follow a project we are already delivering."
         actions={
           <button type="button" className={buttonClass("default")} onClick={() => void load()} disabled={loading}>
             <RefreshCw size={14} /> Refresh
@@ -266,7 +266,7 @@ export default function ServicesPage() {
           <SectionHead
             icon={MessageSquare}
             title="Ask a question"
-            sub="For anything smaller â€” a stuck import, an unclear report, or advice on what to fix first."
+            sub="For anything smaller — a stuck import, an unclear report, or advice on what to fix first."
           />
           <CardBody>
             <form onSubmit={createLead} className={s.stack} style={{ gap: 12 }}>
@@ -369,8 +369,8 @@ export default function ServicesPage() {
                         {project.status.replace(/_/g, " ")}
                       </Badge>
                     </td>
-                    <td className="num">{project.sku_volume_estimate ? project.sku_volume_estimate.toLocaleString() : "â€”"}</td>
-                    <td>{project.client_contact_name || "â€”"}</td>
+                    <td className="num">{project.sku_volume_estimate ? project.sku_volume_estimate.toLocaleString() : "—"}</td>
+                    <td>{project.client_contact_name || "—"}</td>
                   </tr>
                 ))}
               </tbody>

@@ -173,7 +173,7 @@ export default function BillingPage() {
         amount: Math.round(Number(data.amount_inr) * 100),
         currency: data.currency || "INR",
         name: "Rivu AI",
-        description: `Subscription â€” ${planCode}`,
+        description: `Subscription — ${planCode}`,
         handler: async (response: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) => {
           try {
             const verifyRes = await authFetch("/billing/verify-payment", {
@@ -213,7 +213,7 @@ export default function BillingPage() {
           <div>
             <div className={styles.eyebrow}>RIVU / SUBSCRIPTION & REVENUE ENGINE</div>
             <h1>Commercial Operations & Billing</h1>
-            <p>Transparent SaaS subscriptions starting at â‚¹4,999/month up to enterprise data pipelines.</p>
+            <p>Transparent SaaS subscriptions starting at ₹4,999/month up to enterprise data pipelines.</p>
           </div>
           <div className={styles.headerActions}>
             <button className={styles.iconBtn} onClick={loadBillingData} disabled={actionLoading}>
@@ -289,7 +289,7 @@ export default function BillingPage() {
                         )}
                       </div>
                       <div style={{ fontSize: 32, fontWeight: 700, margin: "14px 0 8px" }}>
-                        â‚¹{p.monthly_price_inr.toLocaleString()}
+                        ₹{p.monthly_price_inr.toLocaleString()}
                         <small style={{ fontSize: 12, color: "var(--muted)", fontWeight: 400 }}> / month</small>
                       </div>
                       <p style={{ fontSize: 11, color: "var(--muted)", marginBottom: 20, minHeight: 32 }}>
@@ -297,12 +297,12 @@ export default function BillingPage() {
                       </p>
 
                       <div style={{ borderTop: "1px solid var(--line)", paddingTop: 16, display: "grid", gap: 10, fontSize: 11, color: "#cbd5e1" }}>
-                        <div>â€¢ Up to <b>{p.sku_limit.toLocaleString()}</b> active SKUs</div>
-                        <div>â€¢ <b>{p.monthly_rows_limit.toLocaleString()}</b> rows processed/mo</div>
-                        <div>â€¢ <b>{p.ai_enrichment_credits}</b> AI enrichment credits</div>
-                        <div>â€¢ <b>{p.channels_limit}</b> sales channel integration(s)</div>
-                        <div>â€¢ Support: <b style={{ textTransform: "capitalize" }}>{p.support_tier}</b></div>
-                        {p.api_access && <div>â€¢ Full REST & Webhook API access</div>}
+                        <div>• Up to <b>{p.sku_limit.toLocaleString()}</b> active SKUs</div>
+                        <div>• <b>{p.monthly_rows_limit.toLocaleString()}</b> rows processed/mo</div>
+                        <div>• <b>{p.ai_enrichment_credits}</b> AI enrichment credits</div>
+                        <div>• <b>{p.channels_limit}</b> sales channel integration(s)</div>
+                        <div>• Support: <b style={{ textTransform: "capitalize" }}>{p.support_tier}</b></div>
+                        {p.api_access && <div>• Full REST & Webhook API access</div>}
                       </div>
                     </div>
 
@@ -352,11 +352,11 @@ export default function BillingPage() {
                       <td style={{ padding: "12px 16px", color: "var(--muted)" }}>
                         {new Date(inv.created_at).toLocaleDateString()}
                       </td>
-                      <td style={{ padding: "12px 16px" }}>â‚¹{Number(inv.subtotal_inr).toLocaleString()}</td>
+                      <td style={{ padding: "12px 16px" }}>₹{Number(inv.subtotal_inr).toLocaleString()}</td>
                       <td style={{ padding: "12px 16px", color: "var(--muted)" }}>
-                        â‚¹{(Number(inv.cgst_inr) + Number(inv.sgst_inr) + Number(inv.igst_inr)).toLocaleString()}
+                        ₹{(Number(inv.cgst_inr) + Number(inv.sgst_inr) + Number(inv.igst_inr)).toLocaleString()}
                       </td>
-                      <td style={{ padding: "12px 16px", fontWeight: 700 }}>â‚¹{Number(inv.total_inr).toLocaleString()}</td>
+                      <td style={{ padding: "12px 16px", fontWeight: 700 }}>₹{Number(inv.total_inr).toLocaleString()}</td>
                       <td style={{ padding: "12px 16px" }}>
                         <span style={{ fontSize: 11, background: "#11261d", color: "#7de1b1", padding: "3px 8px", borderRadius: 12 }}>
                           {inv.status.toUpperCase()}
