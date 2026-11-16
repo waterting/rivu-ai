@@ -212,10 +212,12 @@ def _run_smart_mapper(df: pl.DataFrame, config: dict[str, Any]) -> dict[str, Any
     rename_map = {m["source_column"]: m["target_field"] for m in matched}
     output_df = df.rename(rename_map) if rename_map else df
 
+    confidence_list = ", ".join(f"{m['confidence']}%" for m in matched) or "no matches"
+
     return {
         "summary": (
             f"Mapped {len(matched)} of {len(targets)} target fields "
-            f"({', '.join(f'{m['confidence']}%' for m in matched) or 'no matches'})."
+            f"({confidence_list})."
         ),
         "metrics": {
             "targets": len(targets),
