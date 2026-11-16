@@ -2,7 +2,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth, projects, datasets, insights, reports, transformations,
-    billing, commerce, custom_solutions, analytics
+    billing, commerce, custom_solutions, analytics, tools
 )
 from app.catalogue.router import router as catalogue_router
 
@@ -17,4 +17,5 @@ api_router.include_router(datasets.router, prefix="/datasets", tags=["Datasets"]
 api_router.include_router(insights.router, prefix="/datasets", tags=["Dataset Intelligence"])
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
 api_router.include_router(transformations.router, prefix="/datasets", tags=["Transformations"])
+api_router.include_router(tools.router, prefix="/tools", tags=["Tools Centre"])
 api_router.include_router(catalogue_router, prefix="/catalogue", tags=["Catalogue Data Entry"])

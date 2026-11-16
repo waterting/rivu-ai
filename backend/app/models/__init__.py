@@ -12,6 +12,7 @@ from app.models.commerce import Supplier, SupplierMappingRecipe, Product, Produc
 from app.models.custom_solutions import CustomSolutionProject, ProjectMilestone, Lead
 from app.models.audit import AuditLog
 from app.models.worker import WorkerHeartbeat
+from app.models.tool_execution import ToolExecution
 
 __all__ = [
     "User",
@@ -44,4 +45,5 @@ __all__ = [
     "Lead",
     "AuditLog",
     "WorkerHeartbeat",
+    "ToolExecution",
 ]
