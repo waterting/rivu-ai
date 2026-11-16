@@ -525,7 +525,10 @@ def apply_schema(df: pl.DataFrame, sample_limit: int = 20000) -> tuple[pl.DataFr
     """Infer every column, then coerce the columns that are safely numeric."""
     if df.height > sample_limit:
         step = max(1, df.height // sample_limit)
-        sample_frame = df.gather(list(range(0, df.height, step))[:sample_limit])
+        # A strided sample keeps late-file schema drift visible; head() would not.
+        # polars has no DataFrame.gather, so gather through an expression.
+        indices = list(range(0, df.height, step))[:sample_limit]
+        sample_frame = df.select(pl.all().gather(indices))
     else:
         sample_frame = df
 
