@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useEffect, useState, ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -6,7 +6,7 @@ import {
   Activity, Database, UploadCloud, Wand2, Wrench, BarChart3, PieChart,
   Brain, ShoppingCart, Package, Users, Plug, Workflow, Briefcase, FileText,
   CreditCard, LogOut, Moon, Sun, ShieldCheck, ArrowUpRight, Menu, X, Settings,
-  GitCompare, FileOutput, Image as ImageIcon, Store, ListChecks
+  GitCompare, FileOutput, Image as ImageIcon, Store, ListChecks, Columns3, GitBranch
 } from "lucide-react";
 import styles from "./dashboard.module.css";
 import BrandLogo from "../../lib/BrandLogo";
@@ -27,6 +27,10 @@ const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
       { href: "/dashboard/data-sources", label: "Upload data", icon: UploadCloud },
       { href: "/dashboard/datasets", label: "Datasets", icon: Database },
       { href: "/dashboard/processing-jobs", label: "Processing jobs", icon: ListChecks },
+      { href: "/dashboard/data-explorer", label: "Data Explorer", icon: Columns3 },
+      { href: "/dashboard/schema-library", label: "Schema Library", icon: Database },
+      { href: "/dashboard/templates", label: "Templates", icon: FileText },
+      { href: "/dashboard/lineage", label: "Lineage & History", icon: GitBranch },
       { href: "/dashboard/refinery", label: "Clean & improve data", icon: Wand2 },
     ],
   },
