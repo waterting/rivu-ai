@@ -6,7 +6,7 @@ import {
   Activity, Database, UploadCloud, Wand2, Wrench, BarChart3, PieChart,
   Brain, ShoppingCart, Package, Users, Plug, Workflow, Briefcase, FileText,
   CreditCard, LogOut, Moon, Sun, ShieldCheck, ArrowUpRight, Menu, X, Settings,
-  GitCompare, FileOutput, Image as ImageIcon, Store
+  GitCompare, FileOutput, Image as ImageIcon, Store, ListChecks
 } from "lucide-react";
 import styles from "./dashboard.module.css";
 import BrandLogo from "../../lib/BrandLogo";
@@ -25,6 +25,8 @@ const NAV_GROUPS: Array<{ title: string; items: NavItem[] }> = [
     items: [
       { href: "/dashboard", label: "Overview", icon: Activity, exact: true },
       { href: "/dashboard/data-sources", label: "Upload data", icon: UploadCloud },
+      { href: "/dashboard/datasets", label: "Datasets", icon: Database },
+      { href: "/dashboard/processing-jobs", label: "Processing jobs", icon: ListChecks },
       { href: "/dashboard/refinery", label: "Clean & improve data", icon: Wand2 },
     ],
   },

@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import polars as pl
@@ -527,17 +528,32 @@ async def _get_dataset_or_404(dataset_id: UUID, org_id: UUID, db: AsyncSession) 
 
 def _format_datasource(ds: DataSource) -> dict:
     return {
-        "id": str(ds.id),
-        "project_id": str(ds.project_id),
-        "name": ds.name,
-        "description": ds.description,
-        "original_filename": ds.original_filename,
-        "file_format": ds.file_format,
-        "status": ds.status,
-        "current_version": ds.current_version,
-        "created_at": ds.created_at.isoformat(),
-        "updated_at": ds.updated_at.isoformat(),
+    "id": str(ds.id),
+    "project_id": str(ds.project_id),
+    "name": ds.name,
+    "description": ds.description,
+    "original_filename": ds.original_filename,
+    "file_format": ds.file_format,
+    "status": ds.status,
+    "current_version": ds.current_version,
+    "created_at": ds.created_at.isoformat(),
+    "updated_at": ds.updated_at.isoformat(),
     }
+
+
+def _format_dataset(ds: DataSource, version: DatasetVersion | None = None) -> dict:
+    """A dataset row for the manager: parent fields plus current-version facts.
+
+    Row and column counts live on the version, not the parent, so the list needs
+    the current version to show them. When it is not supplied the counts are
+    null rather than zero, which would read as "empty dataset" and be wrong.
+    """
+    payload = _format_datasource(ds)
+    payload["tags"] = list(ds.tags or [])
+    payload["row_count"] = version.row_count if version else None
+    payload["column_count"] = version.column_count if version else None
+    payload["quality_score"] = float(version.quality_score) if version and version.quality_score is not None else None
+    return payload
 
 
 def _format_version(v: DatasetVersion) -> dict:
@@ -553,3 +569,230 @@ def _format_version(v: DatasetVersion) -> dict:
         "quality_delta": float(v.quality_delta) if v.quality_delta is not None else None,
         "created_at": v.created_at.isoformat(),
     }
+
+# ── dataset management ──────────────────────────────────────────────────────
+#
+# The brief asks for a real dataset manager: list, rename, duplicate, archive,
+# delete, and read records. Listing already worked only as a side effect of
+# GET /projects/{id}; these endpoints make it a first-class resource.
+
+
+class RenameDatasetRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=2000)
+
+
+@router.get("/")
+async def list_datasets(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+    status: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+):
+    """Every dataset in the caller's organization, newest first."""
+    org = await _get_user_org(current_user, db)
+    query = select(DataSource).where(DataSource.organization_id == org)
+    if status:
+        query = query.where(DataSource.status == status)
+    if search:
+        query = query.where(DataSource.name.ilike(f"%{search.strip()}%"))
+    rows = (await db.execute(query.order_by(DataSource.created_at.desc()))).scalars().all()
+
+    # Row/column counts come from the current version, not from the parent row,
+    # so the list can show them without N+1 queries per dataset.
+    version_rows = (
+        await db.execute(
+            select(DatasetVersion).where(
+                DatasetVersion.data_source_id.in_([d.id for d in rows] or [uuid.uuid4()]),
+                DatasetVersion.version_number.in_([d.current_version for d in rows] or [0]),
+            )
+        )
+    ).scalars().all()
+    by_dataset = {v.data_source_id: v for v in version_rows}
+
+    return {
+        "datasets": [_format_dataset(d, by_dataset.get(d.id)) for d in rows],
+        "count": len(rows),
+    }
+
+
+@router.get("/{dataset_id}/records")
+async def get_dataset_records(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+):
+    """Read rows from the dataset's current version.
+
+    This is what the Data Explorer renders. It reads the stored artifact rather
+    than re-running the pipeline, so it is the same data every export produces.
+    """
+    org = await _get_user_org(current_user, db)
+    ds = (await db.execute(select(DataSource).where(
+        DataSource.id == dataset_id, DataSource.organization_id == org
+    ))).scalar_one_or_none()
+    if not ds:
+        raise http_not_found("Dataset", str(dataset_id))
+
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id,
+        DatasetVersion.version_number == ds.current_version,
+    ))).scalar_one_or_none()
+    if not version:
+        raise http_not_found("Dataset version")
+
+    raw = await get_storage().download_file(version.storage_key)
+    df, _ = parse_to_polars(raw, version.file_format, version.storage_key)
+
+    rows = df.slice(offset, limit).to_dicts()
+    # JSON-safe: normalise anything that is not a plain scalar.
+    safe_rows = [
+        {
+            k: (v if v is None or isinstance(v, (str, int, float, bool)) else str(v))
+            for k, v in row.items()
+        }
+        for row in rows
+    ]
+    return {
+        "dataset_id": str(ds.id),
+        "version": version.version_number,
+        "row_count": df.height,
+        "column_count": df.width,
+        "columns": [
+            {"name": name, "dtype": str(dtype)} for name, dtype in df.schema.items()
+        ],
+        "rows": safe_rows,
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+@router.patch("/{dataset_id}")
+async def rename_dataset(
+    dataset_id: UUID,
+    body: RenameDatasetRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Rename a dataset and optionally change its description."""
+    org = await _get_user_org(current_user, db)
+    ds = (await db.execute(select(DataSource).where(
+        DataSource.id == dataset_id, DataSource.organization_id == org
+    ))).scalar_one_or_none()
+    if not ds:
+        raise http_not_found("Dataset", str(dataset_id))
+
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "Dataset name cannot be blank")
+
+    ds.name = name
+    if body.description is not None:
+        ds.description = body.description.strip() or None
+    await db.commit()
+    return _format_dataset(ds, None)
+
+
+@router.post("/{dataset_id}/duplicate")
+async def duplicate_dataset(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+    name: str | None = Query(default=None),
+):
+    """Create a new dataset that points at the same stored version.
+
+    The copy is a new dataset record over the same artifact, so duplicating does
+    not double object storage. A later refinement writes a new version and the
+    two diverge from there.
+    """
+    org = await _get_user_org(current_user, db)
+    await require_org_role(current_user, db, {"owner", "admin", "editor"})
+    source = (await db.execute(select(DataSource).where(
+        DataSource.id == dataset_id, DataSource.organization_id == org
+    ))).scalar_one_or_none()
+    if not source:
+        raise http_not_found("Dataset", str(dataset_id))
+
+    version = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == source.id,
+        DatasetVersion.version_number == source.current_version,
+    ))).scalar_one_or_none()
+    if not version:
+        raise http_not_found("Dataset version")
+
+    copy_name = (name or f"{source.name} (copy)").strip()[:300] or f"{source.name} (copy)"
+
+    copy = DataSource(
+        organization_id=source.organization_id,
+        project_id=source.project_id,
+        created_by=current_user.id,
+        name=copy_name,
+        description=source.description,
+        original_filename=source.original_filename,
+        file_format=source.file_format,
+        status=source.status,
+        current_version=source.current_version,
+        tags=list(source.tags or []),
+    )
+    db.add(copy)
+    await db.flush()
+
+    db.add(DatasetVersion(
+        data_source_id=copy.id,
+        organization_id=source.organization_id,
+        version_number=version.version_number,
+        version_label=version.version_label,
+        description=version.description,
+        storage_key=version.storage_key,
+        file_format=version.file_format,
+        file_size_bytes=version.file_size_bytes,
+        row_count=version.row_count,
+        column_count=version.column_count,
+        quality_score=version.quality_score,
+        quality_delta=version.quality_delta,
+    ))
+    await db.commit()
+    return _format_dataset(copy, version)
+
+
+@router.post("/{dataset_id}/archive")
+async def archive_dataset(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Mark a dataset archived. Data is retained; it leaves the default list."""
+    org = await _get_user_org(current_user, db)
+    await require_org_role(current_user, db, {"owner", "admin", "editor"})
+    ds = (await db.execute(select(DataSource).where(
+        DataSource.id == dataset_id, DataSource.organization_id == org
+    ))).scalar_one_or_none()
+    if not ds:
+        raise http_not_found("Dataset", str(dataset_id))
+
+    ds.status = "archived"
+    await db.commit()
+    return _format_dataset(ds, None)
+
+
+@router.post("/{dataset_id}/restore")
+async def restore_dataset(
+    dataset_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Bring an archived dataset back into the active list."""
+    org = await _get_user_org(current_user, db)
+    await require_org_role(current_user, db, {"owner", "admin", "editor"})
+    ds = (await db.execute(select(DataSource).where(
+        DataSource.id == dataset_id, DataSource.organization_id == org
+    ))).scalar_one_or_none()
+    if not ds:
+        raise http_not_found("Dataset", str(dataset_id))
+
+    ds.status = "uploaded"
+    await db.commit()
+    return _format_dataset(ds, None)
