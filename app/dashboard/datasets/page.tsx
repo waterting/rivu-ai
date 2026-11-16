@@ -1,11 +1,7 @@
-"use client";
+﻿"use client";
 
 /**
- * Dataset manager: list, search, filter, rename, duplicate, archive, restore.
- *
- * Every action here calls a real endpoint; the row counts and quality score are
- * read from the dataset's current version rather than recomputed in the
- * browser, so what the table shows is what the backend stored.
+ * Dataset manager: list, search, filter, rename, duplicate, archive, restore, delete.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -56,8 +52,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function statusClass(status: string) {
-  if (status === "failed") return styles.statusPlanned;
-  if (status === "archived") return styles.statusPlanned;
+  if (status === "failed" || status === "archived") return styles.statusPlanned;
   return styles.statusLive;
 }
 
@@ -70,6 +65,9 @@ export default function DatasetsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<DatasetRow | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameDesc, setRenameDesc] = useState("");
+  const [deleting, setDeleting] = useState<DatasetRow | null>(null);
+  const [confirmName, setConfirmName] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,7 +75,7 @@ export default function DatasetsPage() {
     try {
       const res = await authFetch("/datasets/", { headers: authHeaders() });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail?.message || "Could not load datasets");
+      if (!res.ok) throw new Error(body.detail?.message || body.detail || "Could not load datasets");
       setRows(Array.isArray(body.datasets) ? body.datasets : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load datasets");
@@ -88,12 +86,8 @@ export default function DatasetsPage() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      if (!cancelled) await load();
-    })();
-    return () => {
-      cancelled = true;
-    };
+    (async () => { if (!cancelled) await load(); })();
+    return () => { cancelled = true; };
   }, [load]);
 
   async function act(row: DatasetRow, action: "duplicate" | "archive" | "restore") {
@@ -105,7 +99,7 @@ export default function DatasetsPage() {
         headers: authHeaders(),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail?.message || `Could not ${action} dataset`);
+      if (!res.ok) throw new Error(body.detail?.message || body.detail || `Could not ${action} dataset`);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : `Could not ${action} dataset`);
@@ -122,14 +116,35 @@ export default function DatasetsPage() {
       const res = await authFetch(`/datasets/${renaming.id}`, {
         method: "PATCH",
         headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ name: renameValue }),
+        body: JSON.stringify({ name: renameValue, description: renameDesc }),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.detail?.message || "Could not rename dataset");
+      if (!res.ok) throw new Error(body.detail?.message || body.detail || "Could not update dataset");
       setRenaming(null);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not rename dataset");
+      setError(e instanceof Error ? e.message : "Could not update dataset");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleting) return;
+    setBusy(deleting.id);
+    setError("");
+    try {
+      const res = await authFetch(`/datasets/${deleting.id}?confirm=true`, {
+        method: "DELETE",
+        headers: { ...authHeaders(), "X-Confirm-Delete": "DELETE" },
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail?.message || body.detail || "Could not delete dataset");
+      setDeleting(null);
+      setConfirmName("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete dataset");
     } finally {
       setBusy(null);
     }
@@ -140,10 +155,7 @@ export default function DatasetsPage() {
     return rows.filter((row) => {
       if (status && row.status !== status) return false;
       if (!needle) return true;
-      return (
-        row.name.toLowerCase().includes(needle) ||
-        (row.original_filename || "").toLowerCase().includes(needle)
-      );
+      return row.name.toLowerCase().includes(needle) || (row.original_filename || "").toLowerCase().includes(needle);
     });
   }, [rows, search, status]);
 
@@ -156,15 +168,10 @@ export default function DatasetsPage() {
         <div>
           <div className={styles.eyebrow}>RIVU / DATA / DATASETS</div>
           <h1>Datasets</h1>
-          <p>
-            Every dataset in your workspace, with the row and column counts of its current
-            version. Rename, duplicate, archive and restore from here.
-          </p>
+          <p>Every dataset in your workspace. Rename, duplicate, archive, restore, or permanently delete.</p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.iconBtn} onClick={load}>
-            <RefreshCw size={14} /> Refresh
-          </button>
+          <button className={styles.iconBtn} onClick={load}><RefreshCw size={14} /> Refresh</button>
         </div>
       </header>
 
@@ -173,23 +180,35 @@ export default function DatasetsPage() {
       {renaming && (
         <div className={styles.modal}>
           <div className={styles.modalCard}>
-            <button
-              className={styles.close}
-              onClick={() => setRenaming(null)}
-              aria-label="Close"
-            >
-              ✕
+            <button className={styles.close} onClick={() => setRenaming(null)} aria-label="Close">✕</button>
+            <h2>Edit dataset</h2>
+            <p>Update name and description. File and versions remain unchanged.</p>
+            <label>Name</label>
+            <input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} placeholder="Dataset name" autoFocus />
+            <label>Description</label>
+            <textarea value={renameDesc} onChange={(e) => setRenameDesc(e.target.value)} placeholder="Optional description" rows={3} />
+            <button className={styles.primaryWide} onClick={saveRename} disabled={busy === renaming.id || !renameValue.trim()}>
+              <Pencil size={14} /> Save changes
             </button>
-            <h2>Rename dataset</h2>
-            <p>Current name: {renaming.name}</p>
-            <input
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              placeholder="New name"
-              autoFocus
-            />
-            <button className={styles.primaryWide} onClick={saveRename} disabled={busy === renaming.id}>
-              <Pencil size={14} /> Save name
+          </div>
+        </div>
+      )}
+
+      {deleting && (
+        <div className={styles.modal}>
+          <div className={styles.modalCard}>
+            <button className={styles.close} onClick={() => { setDeleting(null); setConfirmName(""); }} aria-label="Close">✕</button>
+            <h2>Delete dataset</h2>
+            <p>This permanently deletes <b>{deleting.name}</b> and its stored versions, profiles, quality results, and job history. This cannot be undone.</p>
+            <p style={{ marginTop: 8, fontSize: 11, color: "var(--muted)" }}>Type the dataset name to confirm: <b>{deleting.name}</b></p>
+            <input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder="Dataset name" />
+            <button
+              className={styles.primaryWide}
+              onClick={confirmDelete}
+              disabled={busy === deleting.id || confirmName !== deleting.name}
+              style={{ background: "#3a1218", color: "#ffd7dc", borderColor: "#5a1d27" }}
+            >
+              <Trash2 size={14} /> Permanently delete
             </button>
           </div>
         </div>
@@ -200,12 +219,7 @@ export default function DatasetsPage() {
           <div style={{ flex: "1 1 260px" }}>
             <label>Search</label>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="text"
-                value={search}
-                placeholder="dataset name or filename"
-                onChange={(e) => setSearch(e.target.value)}
-              />
+              <input type="text" value={search} placeholder="dataset name or filename" onChange={(e) => setSearch(e.target.value)} />
               <Search size={14} style={{ color: "var(--muted)" }} />
             </div>
           </div>
@@ -213,11 +227,7 @@ export default function DatasetsPage() {
             <label>Status</label>
             <select value={status} onChange={(e) => setStatus(e.target.value)}>
               <option value="">All statuses</option>
-              {Object.entries(STATUS_LABEL).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
+              {Object.entries(STATUS_LABEL).map(([key, label]) => (<option key={key} value={key}>{label}</option>))}
             </select>
           </div>
         </div>
@@ -233,17 +243,16 @@ export default function DatasetsPage() {
           <h2>No datasets yet</h2>
           <p>Upload a file to create your first dataset.</p>
           <div style={{ marginTop: 12 }}>
-            <Link className={styles.primary} href="/dashboard/data-sources">
-              <FileSpreadsheet size={14} /> Upload data
-            </Link>
+            <Link className={styles.primary} href="/dashboard/data-sources"><FileSpreadsheet size={14} /> Upload data</Link>
           </div>
         </section>
       )}
 
-      {!loading && filtered.length === 0 && rows.length > 0 && (
+      {!loading && rows.length > 0 && filtered.length === 0 && (
         <section className={styles.sectionBlock}>
           <h2>No datasets match</h2>
           <p>Try a different search or clear the status filter.</p>
+          <div style={{ marginTop: 12 }}><button className={styles.iconBtn} onClick={() => { setSearch(""); setStatus(""); }}>Clear filters</button></div>
         </section>
       )}
 
@@ -253,68 +262,26 @@ export default function DatasetsPage() {
           <div style={{ overflowX: "auto", marginTop: 12 }}>
             <table className={styles.table}>
               <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Format</th>
-                  <th>Status</th>
-                  <th>Rows</th>
-                  <th>Columns</th>
-                  <th>Quality</th>
-                  <th>Actions</th>
-                </tr>
+                <tr><th>Name</th><th>Format</th><th>Status</th><th>Rows</th><th>Columns</th><th>Quality</th><th>Actions</th></tr>
               </thead>
               <tbody>
                 {active.map((row) => (
                   <tr key={row.id}>
                     <td>
                       <Link href={`/dashboard/dataset/${row.id}`}>{row.name}</Link>
-                      <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 2 }}>
-                        {row.original_filename} · v{row.current_version}
-                      </div>
+                      <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 2 }}>{row.original_filename} · v{row.current_version}{row.description ? ` · ${row.description}` : ""}</div>
                     </td>
                     <td>{row.file_format}</td>
-                    <td>
-                      <span className={statusClass(row.status)}>
-                        {STATUS_LABEL[row.status] || row.status}
-                      </span>
-                    </td>
-                    <td>{row.row_count === null ? "—" : row.row_count.toLocaleString()}</td>
-                    <td>{row.column_count === null ? "—" : row.column_count}</td>
-                    <td>
-                      {row.quality_score === null ? "—" : row.quality_score.toFixed(1)}
-                    </td>
+                    <td><span className={statusClass(row.status)}>{STATUS_LABEL[row.status] || row.status}</span></td>
+                    <td>{row.row_count == null ? "—" : row.row_count.toLocaleString()}</td>
+                    <td>{row.column_count == null ? "—" : row.column_count}</td>
+                    <td>{row.quality_score == null ? "—" : row.quality_score.toFixed(1)}</td>
                     <td>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        <button
-                          className={styles.iconBtn}
-                          style={{ padding: "5px 8px", fontSize: 10 }}
-                          onClick={() => {
-                            setRenaming(row);
-                            setRenameValue(row.name);
-                          }}
-                          disabled={busy === row.id}
-                          title="Rename"
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          className={styles.iconBtn}
-                          style={{ padding: "5px 8px", fontSize: 10 }}
-                          onClick={() => act(row, "duplicate")}
-                          disabled={busy === row.id}
-                          title="Duplicate"
-                        >
-                          <Copy size={12} />
-                        </button>
-                        <button
-                          className={styles.iconBtn}
-                          style={{ padding: "5px 8px", fontSize: 10 }}
-                          onClick={() => act(row, "archive")}
-                          disabled={busy === row.id}
-                          title="Archive"
-                        >
-                          <Archive size={12} />
-                        </button>
+                        <button className={styles.iconBtn} style={{ padding: "5px 8px", fontSize: 10 }} onClick={() => { setRenaming(row); setRenameValue(row.name); setRenameDesc(row.description || ""); }} disabled={busy === row.id} title="Edit name/description"><Pencil size={12} /></button>
+                        <button className={styles.iconBtn} style={{ padding: "5px 8px", fontSize: 10 }} onClick={() => act(row, "duplicate")} disabled={busy === row.id} title="Duplicate"><Copy size={12} /></button>
+                        <button className={styles.iconBtn} style={{ padding: "5px 8px", fontSize: 10 }} onClick={() => act(row, "archive")} disabled={busy === row.id} title="Archive"><Archive size={12} /></button>
+                        <button className={styles.iconBtn} style={{ padding: "5px 8px", fontSize: 10, color: "#ff9da8" }} onClick={() => { setDeleting(row); setConfirmName(""); }} disabled={busy === row.id} title="Delete permanently"><Trash2 size={12} /></button>
                       </div>
                     </td>
                   </tr>
@@ -328,34 +295,22 @@ export default function DatasetsPage() {
       {archived.length > 0 && (
         <section className={styles.sectionBlock}>
           <h2>Archived ({archived.length})</h2>
-          <p>Archived datasets keep their data and versions. Restore one to work on it again.</p>
+          <p>Archived datasets keep their data and versions until you delete them permanently.</p>
           <div style={{ overflowX: "auto", marginTop: 12 }}>
             <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Format</th>
-                  <th>Rows</th>
-                  <th>Archived</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Name</th><th>Format</th><th>Rows</th><th>Archived</th><th>Actions</th></tr></thead>
               <tbody>
                 {archived.map((row) => (
                   <tr key={row.id}>
                     <td>{row.name}</td>
                     <td>{row.file_format}</td>
-                    <td>{row.row_count === null ? "—" : row.row_count.toLocaleString()}</td>
+                    <td>{row.row_count == null ? "—" : row.row_count.toLocaleString()}</td>
                     <td>{new Date(row.updated_at).toLocaleDateString()}</td>
                     <td>
-                      <button
-                        className={styles.iconBtn}
-                        style={{ padding: "5px 8px", fontSize: 10 }}
-                        onClick={() => act(row, "restore")}
-                        disabled={busy === row.id}
-                      >
-                        <RotateCcw size={12} /> Restore
-                      </button>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <button className={styles.iconBtn} style={{ padding: "5px 8px", fontSize: 10 }} onClick={() => act(row, "restore")} disabled={busy === row.id}><RotateCcw size={12} /> Restore</button>
+                        <button className={styles.iconBtn} style={{ padding: "5px 8px", fontSize: 10, color: "#ff9da8" }} onClick={() => { setDeleting(row); setConfirmName(""); }} disabled={busy === row.id} title="Delete permanently"><Trash2 size={12} /> Delete</button>
+                      </div>
                     </td>
                   </tr>
                 ))}

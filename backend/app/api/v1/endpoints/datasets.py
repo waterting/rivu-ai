@@ -1,4 +1,4 @@
-﻿"""
+"""
 Datasets endpoints: upload, list, get, profile, analyze, version management.
 """
 
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Request, UploadFile, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -570,7 +570,7 @@ def _format_version(v: DatasetVersion) -> dict:
         "created_at": v.created_at.isoformat(),
     }
 
-# ── dataset management ──────────────────────────────────────────────────────
+# -- dataset management ------------------------------------------------------
 #
 # The brief asks for a real dataset manager: list, rename, duplicate, archive,
 # delete, and read records. Listing already worked only as a side effect of
@@ -796,3 +796,59 @@ async def restore_dataset(
     ds.status = "uploaded"
     await db.commit()
     return _format_dataset(ds, None)
+
+@router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dataset(
+    dataset_id: UUID,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Permanently delete a dataset and its dependent records.
+
+    Deletes dataset rows (cascades versions/profiles/quality data per FKs) and
+    best-effort removes stored artifacts from object storage. Requires explicit
+    confirmation via ``X-Confirm-Delete: DELETE`` or query ``confirm=true``.
+    """
+    confirm_header = (request.headers.get("X-Confirm-Delete") or "").strip().upper()
+    confirm_query = str(request.query_params.get("confirm", "")).lower() in {"1", "true", "yes", "delete"}
+    if confirm_header != "DELETE" and not confirm_query:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Deletion requires confirmation. Send X-Confirm-Delete: DELETE or ?confirm=true.", "type": "confirmation_required"},
+        )
+
+    org = await _get_user_org(current_user, db)
+    await require_org_role(current_user, db, {"owner", "admin", "editor"})
+    ds = (await db.execute(select(DataSource).where(
+        DataSource.id == dataset_id, DataSource.organization_id == org
+    ))).scalar_one_or_none()
+    if not ds:
+        raise http_not_found("Dataset", str(dataset_id))
+
+    versions = (await db.execute(select(DatasetVersion).where(
+        DatasetVersion.data_source_id == ds.id
+    ))).scalars().all()
+
+    storage = get_storage()
+    for v in versions:
+        key = getattr(v, "storage_key", None)
+        if key:
+            try:
+                await storage.delete_file(key)
+            except Exception:
+                # Best-effort: DB is source of truth for deletion.
+                pass
+
+    await record_event(
+        db,
+        action="dataset_deleted",
+        organization_id=org,
+        actor_id=current_user.id,
+        resource_type="dataset",
+        resource_id=dataset_id,
+        details={"name": ds.name, "versions": len(versions)},
+    )
+    await db.delete(ds)
+    await db.commit()
+    return None
