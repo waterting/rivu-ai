@@ -41,17 +41,14 @@ export default function ServicesPage() {
   const [stage, setStage] = useState("Ready");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [signedIn, setSignedIn] = useState(() => {
-    if (typeof window !== "undefined") {
-      return Boolean(localStorage.getItem("rivu_access_token"));
-    }
-    return false;
-  });
+  const [signedIn, setSignedIn] = useState(false);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("rivu_access_token") : null;
     if (!token) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync auth presence after mount to avoid hydration mismatch
+    setSignedIn(true);
     let cancelled = false;
     (async () => {
       try {
